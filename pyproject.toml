@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ohme"
+version = "1.0.0"
+authors = [
+  { name="Dan Raper", email="git@danr.uk" },
+]
+description = "A Python wrapper for the Ohme API, used by the Home Assistant integration."
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "aiohttp >= 3.0.0"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/dan-r/ohmepy"
+"Bug Tracker" = "https://github.com/dan-r/ohmepy/issues"
