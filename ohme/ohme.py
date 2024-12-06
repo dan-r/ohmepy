@@ -1,14 +1,12 @@
 import aiohttp
-import importlib.metadata
 import logging
 import json
 from time import time
 from datetime import datetime, timedelta
 from .utils import time_next_occurs
+from .const import VERSION, GOOGLE_API_KEY
 
 _LOGGER = logging.getLogger(__name__)
-
-GOOGLE_API_KEY = "AIzaSyC8ZeZngm33tpOXLpbXeKfwtyZ1WrkbdBY"
 
 class OhmeApiClient:
     """API client for Ohme EV chargers."""
@@ -106,7 +104,7 @@ class OhmeApiClient:
         return {
             "Authorization": "Firebase %s" % self._token,
             "Content-Type": "application/json",
-            "User-Agent": f"ohmepy/{importlib.metadata.version('ohme')}"
+            "User-Agent": f"ohmepy/{VERSION}"
         }
 
     async def _post_request(self, url, skip_json=False, data=None):
