@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ohme"
-version = "1.0.2"
+version = "1.0.4"
 authors = [
   { name="Dan Raper", email="git@danr.uk" },
 ]
 description = "A Python wrapper for the Ohme API, used by the Home Assistant integration."
+license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.7"
 classifiers = [
