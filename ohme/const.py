@@ -1,2 +1,2 @@
 GOOGLE_API_KEY = "AIzaSyC8ZeZngm33tpOXLpbXeKfwtyZ1WrkbdBY"
-VERSION = "1.0.2"
+VERSION = "1.0.3"
