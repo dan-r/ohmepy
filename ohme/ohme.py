@@ -8,6 +8,7 @@ from .const import VERSION, GOOGLE_API_KEY
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class OhmeApiClient:
     """API client for Ohme EV chargers."""
 
@@ -40,28 +41,27 @@ class OhmeApiClient:
         self._last_rule = {}
 
         # Sessions
-        timeout = aiohttp.ClientTimeout(total=10)
-        self._session = aiohttp.ClientSession(
-            base_url="https://api.ohme.io", timeout=timeout)
-        self._auth_session = aiohttp.ClientSession(timeout=timeout)
+        self._timeout = aiohttp.ClientTimeout(total=10)
+        self._base_url = "https://api.ohme.io"
 
     # Auth methods
 
     async def async_create_session(self):
         """Refresh the user auth token from the stored credentials."""
-        async with self._auth_session.post(
-            f"https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword?key={GOOGLE_API_KEY}",
-            data={"email": self.email, "password": self._password,
-                  "returnSecureToken": True}
-        ) as resp:
-            if resp.status != 200:
-                return None
+        async with aiohttp.ClientSession(timeout=self._timeout) as session:
+            async with session.post(
+                f"https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword?key={GOOGLE_API_KEY}",
+                data={"email": self.email, "password": self._password,
+                      "returnSecureToken": True}
+            ) as resp:
+                if resp.status != 200:
+                    return None
 
-            resp_json = await resp.json()
-            self._token_birth = time()
-            self._token = resp_json['idToken']
-            self._refresh_token = resp_json['refreshToken']
-            return True
+                resp_json = await resp.json()
+                self._token_birth = time()
+                self._token = resp_json['idToken']
+                self._refresh_token = resp_json['refreshToken']
+                return True
 
     async def async_refresh_session(self):
         """Refresh auth token if needed."""
@@ -72,22 +72,23 @@ class OhmeApiClient:
         if time() - self._token_birth < 2700:
             return
 
-        async with self._auth_session.post(
-            f"https://securetoken.googleapis.com/v1/token?key={GOOGLE_API_KEY}",
-            data={"grantType": "refresh_token",
-                  "refreshToken": self._refresh_token}
-        ) as resp:
-            if resp.status != 200:
-                text = await resp.text()
-                msg = f"Ohme auth refresh error: {text}"
-                _LOGGER.error(msg)
-                raise AuthException(msg)
+        async with aiohttp.ClientSession(timeout=self._timeout) as session:
+            async with session.post(
+                f"https://securetoken.googleapis.com/v1/token?key={GOOGLE_API_KEY}",
+                data={"grantType": "refresh_token",
+                      "refreshToken": self._refresh_token}
+            ) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    msg = f"Ohme auth refresh error: {text}"
+                    _LOGGER.error(msg)
+                    raise AuthException(msg)
 
-            resp_json = await resp.json()
-            self._token_birth = time()
-            self._token = resp_json['id_token']
-            self._refresh_token = resp_json['refresh_token']
-            return True
+                resp_json = await resp.json()
+                self._token_birth = time()
+                self._token = resp_json['id_token']
+                self._refresh_token = resp_json['refresh_token']
+                return True
 
     # Internal methods
 
@@ -110,43 +111,55 @@ class OhmeApiClient:
     async def _post_request(self, url, skip_json=False, data=None):
         """Make a POST request."""
         await self.async_refresh_session()
-        async with self._session.post(
-            url,
-            data=data,
-            headers=self._get_headers()
-        ) as resp:
-            _LOGGER.debug(f"POST request to {url}, status code {resp.status}")
-            await self._handle_api_error(url, resp)
 
-            if skip_json:
-                return await resp.text()
+        async with aiohttp.ClientSession(
+                base_url=self._base_url, timeout=self._timeout) as session:
+            async with session.post(
+                url,
+                data=data,
+                headers=self._get_headers()
+            ) as resp:
+                _LOGGER.debug(
+                    f"POST request to {url}, status code {resp.status}")
+                await self._handle_api_error(url, resp)
 
-            return await resp.json()
+                if skip_json:
+                    return await resp.text()
+
+                return await resp.json()
 
     async def _put_request(self, url, data=None):
         """Make a PUT request."""
         await self.async_refresh_session()
-        async with self._session.put(
-            url,
-            data=json.dumps(data),
-            headers=self._get_headers()
-        ) as resp:
-            _LOGGER.debug(f"PUT request to {url}, status code {resp.status}")
-            await self._handle_api_error(url, resp)
 
-            return True
+        async with aiohttp.ClientSession(
+                base_url=self._base_url, timeout=self._timeout) as session:
+            async with session.put(
+                url,
+                data=json.dumps(data),
+                headers=self._get_headers()
+            ) as resp:
+                _LOGGER.debug(
+                    f"PUT request to {url}, status code {resp.status}")
+                await self._handle_api_error(url, resp)
+
+                return True
 
     async def _get_request(self, url):
         """Make a GET request."""
         await self.async_refresh_session()
-        async with self._session.get(
-            url,
-            headers=self._get_headers()
-        ) as resp:
-            _LOGGER.debug(f"GET request to {url}, status code {resp.status}")
-            await self._handle_api_error(url, resp)
 
-            return await resp.json()
+        async with aiohttp.ClientSession(
+                base_url=self._base_url, timeout=self._timeout) as session:
+            async with session.get(
+                url,
+                headers=self._get_headers()
+            ) as resp:
+                _LOGGER.debug(
+                    f"GET request to {url}, status code {resp.status}")
+                await self._handle_api_error(url, resp)
+
+                return await resp.json()
 
     # Simple getters
 
@@ -309,7 +322,6 @@ class OhmeApiClient:
             "sw_version": device['firmwareVersionLabel'],
             "serial_number": self.serial
         }
-
 
         if resp['tariff'] is not None and resp['tariff']['dsrTariff']:
             self._disable_cap = True
