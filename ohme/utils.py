@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 
+
 def time_next_occurs(hour, minute):
     """Find when this time next occurs."""
     current = datetime.now()
