@@ -1,11 +1,13 @@
-import aiohttp
+"""Ohme API library."""
 import logging
 import json
 from time import time
+from enum import Enum
+from typing import Any
+from dataclasses import dataclass
+import aiohttp
 from .utils import time_next_occurs
 from .const import VERSION, GOOGLE_API_KEY
-from enum import Enum
-from dataclasses import dataclass
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ class OhmeApiClient:
         self._password = password
 
         # Charger and its capabilities
-        self.device_info = None
+        self.device_info : dict[str, Any] = {}
         self._charge_session = {}
         self._advanced_settings = {}
         self.schedules = []
@@ -78,14 +80,14 @@ class OhmeApiClient:
                 },
             ) as resp:
                 if resp.status != 200:
-                    return False
+                    raise AuthException("Incorrect credentials")
 
                 resp_json = await resp.json()
                 self._token_birth = time()
                 self._token = resp_json["idToken"]
                 self._refresh_token = resp_json["refreshToken"]
                 return True
-        return False
+        raise AuthException("Incorrect credentials")
 
     async def _async_refresh_session(self):
         """Refresh auth token if needed."""
@@ -155,12 +157,12 @@ class OhmeApiClient:
 
     # Simple getters
 
-    def is_capable(self, capability):
+    def is_capable(self, capability) -> bool:
         """Return whether or not this model has a given capability."""
         return bool(self._capabilities[capability])
 
     @property
-    def status(self):
+    def status(self) -> ChargerStatus:
         """Return status from enum."""
         if self._charge_session["mode"] == "PENDING_APPROVAL":
             return ChargerStatus.PENDING_APPROVAL
@@ -175,7 +177,7 @@ class OhmeApiClient:
             return ChargerStatus.PLUGGED_IN
 
     @property
-    def available(self):
+    def available(self) -> bool:
         """CT reading."""
         return self._advanced_settings.get("online", False)
 
@@ -390,12 +392,9 @@ class OhmeApiClient:
         self.serial = device["id"]
 
         self.device_info = {
-            "identifiers": {("ohme", self.serial)},
             "name": device["modelTypeDisplayName"],
-            "manufacturer": "Ohme",
             "model": device["modelTypeDisplayName"].replace("Ohme ", ""),
             "sw_version": device["firmwareVersionLabel"],
-            "serial_number": self.serial,
         }
 
         if resp["tariff"] is not None and resp["tariff"]["dsrTariff"]:
