@@ -8,7 +8,7 @@ from typing import Any
 from dataclasses import dataclass
 import datetime
 import aiohttp
-from .utils import time_next_occurs, ChargerSlot, slot_list
+from .utils import time_next_occurs, ChargeSlot, slot_list
 from .const import VERSION, GOOGLE_API_KEY
 
 _LOGGER = logging.getLogger(__name__)
@@ -197,7 +197,7 @@ class OhmeApiClient:
         )
 
     @property
-    def slots(self) -> list[ChargerSlot]:
+    def slots(self) -> list[ChargeSlot]:
         """Slot list."""
         return slot_list(self._charge_session)
 
@@ -387,7 +387,7 @@ class OhmeApiClient:
             self._last_rule = resp["appliedRule"]
 
         # Calculate energy
-        new_energy = resp["chargeGraph"]["now"]["y"]
+        new_energy = (resp.get("chargeGraph", {}).get("now", {}) or {}).get("y", 0)
         if self.energy is None or new_energy <= 0:
             self.energy = new_energy
         elif (
