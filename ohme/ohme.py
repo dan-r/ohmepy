@@ -1,12 +1,14 @@
 """Ohme API library."""
+
 import logging
 import json
 from time import time
 from enum import Enum
 from typing import Any
 from dataclasses import dataclass
+import datetime
 import aiohttp
-from .utils import time_next_occurs
+from .utils import time_next_occurs, ChargerSlot, slot_list
 from .const import VERSION, GOOGLE_API_KEY
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,28 +45,29 @@ class OhmeApiClient:
         self._password = password
 
         # Charger and its capabilities
-        self.device_info : dict[str, Any] = {}
-        self._charge_session = {}
-        self._advanced_settings = {}
-        self.schedules = []
-        self.energy = None
+        self.device_info: dict[str, Any] = {}
+        self._charge_session: dict[str, Any] = {}
+        self._advanced_settings: dict[str, Any] = {}
+        self.schedules: list[dict[str, Any]] = []
+        self.energy: float = 0.0
+        self.battery: int = 0
 
-        self._capabilities = {}
-        self.ct_connected = False
-        self.cap_available = True
-        self.solar_capable = False
+        self._capabilities: dict[str, bool | str | list[str]] = {}
+        self.ct_connected: bool = False
+        self.cap_available: bool = True
+        self.solar_capable: bool = False
 
         # Authentication
-        self._token_birth = 0
-        self._token = None
-        self._refresh_token = None
+        self._token_birth: float = 0.0
+        self._token: str | None = None
+        self._refresh_token: str | None = None
 
         # User info
         self.serial = ""
 
         # Sessions
         self._timeout = aiohttp.ClientTimeout(total=10)
-        self._last_rule = None
+        self._last_rule: dict[str, Any] = {}
 
     # Auth methods
 
@@ -89,14 +92,14 @@ class OhmeApiClient:
                 return True
         raise AuthException("Incorrect credentials")
 
-    async def _async_refresh_session(self):
+    async def _async_refresh_session(self) -> bool:
         """Refresh auth token if needed."""
         if self._token is None:
             return await self.async_login()
 
         # Don't refresh token unless its over 45 mins old
         if time() - self._token_birth < 2700:
-            return
+            return True
 
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
             async with session.post(
@@ -193,6 +196,35 @@ class OhmeApiClient:
             ct_amps=self._advanced_settings.get("clampAmps", 0),
         )
 
+    @property
+    def slots(self) -> list[ChargerSlot]:
+        """Slot list."""
+        return slot_list(self._charge_session)
+
+    @property
+    def next_slot_start(self) -> datetime.datetime | None:
+        """Next slot start."""
+        return min(
+            (
+                slot.start
+                for slot in self.slots
+                if slot.start > datetime.datetime.now().astimezone()
+            ),
+            default=None,
+        )
+
+    @property
+    def next_slot_end(self) -> datetime.datetime | None:
+        """Next slot start."""
+        return min(
+            (
+                slot.end
+                for slot in self.slots
+                if slot.end > datetime.datetime.now().astimezone()
+            ),
+            default=None,
+        )
+
     # Push methods
 
     async def async_pause_charge(self) -> bool:
@@ -231,7 +263,7 @@ class OhmeApiClient:
         target_percent=None,
         pre_condition=None,
         pre_condition_length=None,
-    ):
+    ) -> bool:
         """Apply rule to ongoing charge/stop max charge."""
         # Check every property. If we've provided it, use that. If not, use the existing.
         if max_price is None:
@@ -291,7 +323,7 @@ class OhmeApiClient:
         )
         return bool(result)
 
-    async def async_change_price_cap(self, enabled=None, cap=None):
+    async def async_change_price_cap(self, enabled=None, cap=None) -> bool:
         """Change price cap settings."""
         settings = await self._make_request("PUT", "/v1/users/me/settings")
         if enabled is not None:
@@ -309,7 +341,7 @@ class OhmeApiClient:
         target_time=None,
         pre_condition=None,
         pre_condition_length=None,
-    ):
+    ) -> bool:
         """Update the first listed schedule."""
         await self.async_get_schedules()
 
@@ -317,7 +349,7 @@ class OhmeApiClient:
 
         # Account for user having no rules
         if not rule:
-            return None
+            return False
 
         # Update percent and time if provided
         if target_percent is not None:
@@ -334,7 +366,7 @@ class OhmeApiClient:
         await self._make_request("PUT", f"/v1/chargeRules/{rule['id']}", data=rule)
         return True
 
-    async def async_set_configuration_value(self, values):
+    async def async_set_configuration_value(self, values) -> bool:
         """Set a configuration value or values."""
         result = await self._make_request(
             "PUT", f"/v1/chargeDevices/{self.serial}/appSettings", data=values
@@ -354,6 +386,7 @@ class OhmeApiClient:
         if resp["mode"] == "SMART_CHARGE" and "appliedRule" in resp:
             self._last_rule = resp["appliedRule"]
 
+        # Calculate energy
         new_energy = resp["chargeGraph"]["now"]["y"]
         if self.energy is None or new_energy <= 0:
             self.energy = new_energy
@@ -364,17 +397,22 @@ class OhmeApiClient:
         else:
             self.energy = max(0, self.energy or 0, new_energy)
 
+        self.battery = resp.get("car", {}).get("batterySoc", {}).get("percent", 0)
+        self.battery = self.battery or resp.get("batterySoc", {}).get("percent", 0)
+
     async def async_get_advanced_settings(self) -> None:
         """Get advanced settings (mainly for CT clamp reading)"""
         resp = await self._make_request(
             "GET", f"/v1/chargeDevices/{self.serial}/advancedSettings"
         )
 
-        # If we ever get a reading above 0, assume CT connected
-        if resp["clampConnected"]:
-            self.ct_connected = True
-
         self._advanced_settings = resp
+
+        # clampConnected is not reliable, so check clampAmps being > 0 as an alternative
+        if resp["clampConnected"] or (
+            isinstance(resp.get("clampAmps"), float) and resp.get("clampAmps") > 0
+        ):
+            self.ct_connected = True
 
     async def async_get_schedules(self) -> None:
         """Get charge schedules."""
@@ -382,7 +420,7 @@ class OhmeApiClient:
 
         self.schedules = schedules
 
-    async def async_update_device_info(self):
+    async def async_update_device_info(self) -> bool:
         """Update _device_info with our charger model."""
         resp = await self._make_request("GET", "/v1/users/me/account")
 
