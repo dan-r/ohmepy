@@ -21,6 +21,7 @@ class ChargerStatus(Enum):
     PENDING_APPROVAL = "pending_approval"
     CHARGING = "charging"
     PLUGGED_IN = "plugged_in"
+    PAUSED = "paused"
 
 
 @dataclass
@@ -171,6 +172,8 @@ class OhmeApiClient:
             return ChargerStatus.PENDING_APPROVAL
         elif self._charge_session["mode"] == "DISCONNECTED":
             return ChargerStatus.UNPLUGGED
+        elif self._charge_session["mode"] == "STOPPED":
+            return ChargerStatus.PAUSED
         elif (
             self._charge_session.get("power")
             and self._charge_session["power"].get("watt", 0) > 0
