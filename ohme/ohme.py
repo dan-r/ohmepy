@@ -183,6 +183,11 @@ class OhmeApiClient:
             return ChargerStatus.PLUGGED_IN
 
     @property
+    def max_charge(self) -> bool:
+        """Get if max charge is enabled."""
+        return self._charge_session.get("mode") == "MAX_CHARGE"
+
+    @property
     def available(self) -> bool:
         """CT reading."""
         return self._advanced_settings.get("online", False)
