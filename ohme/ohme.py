@@ -1,6 +1,7 @@
 """Ohme API library."""
 
 import logging
+import asyncio
 import json
 from time import time
 from enum import Enum
@@ -54,6 +55,7 @@ class OhmeApiClient:
         self.battery: int = 0
 
         self._capabilities: dict[str, bool | str | list[str]] = {}
+        self._configuration: dict[str, bool | str ] = {}
         self.ct_connected: bool = False
         self.cap_available: bool = True
         self.solar_capable: bool = False
@@ -164,6 +166,10 @@ class OhmeApiClient:
     def is_capable(self, capability) -> bool:
         """Return whether or not this model has a given capability."""
         return bool(self._capabilities[capability])
+
+    def configuration_value(self, value) -> bool:
+        """Return a boolean configuration value."""
+        return bool(self._configuration.get(value))
 
     @property
     def status(self) -> ChargerStatus:
@@ -379,6 +385,8 @@ class OhmeApiClient:
         result = await self._make_request(
             "PUT", f"/v1/chargeDevices/{self.serial}/appSettings", data=values
         )
+        await asyncio.sleep(1) # The API is slow to update after this request
+        
         return bool(result)
 
     # Pull methods
@@ -435,6 +443,7 @@ class OhmeApiClient:
         device = resp["chargeDevices"][0]
 
         self._capabilities = device["modelCapabilities"]
+        self._configuration = device["optionalSettings"]
         self.serial = device["id"]
 
         self.device_info = {
