@@ -50,12 +50,13 @@ class OhmeApiClient:
         self.device_info: dict[str, Any] = {}
         self._charge_session: dict[str, Any] = {}
         self._advanced_settings: dict[str, Any] = {}
-        self.schedules: list[dict[str, Any]] = []
+        self._next_session: dict[str, Any] = {}
+
         self.energy: float = 0.0
         self.battery: int = 0
 
         self._capabilities: dict[str, bool | str | list[str]] = {}
-        self._configuration: dict[str, bool | str ] = {}
+        self._configuration: dict[str, bool | str] = {}
         self.ct_connected: bool = False
         self.cap_available: bool = True
         self.solar_capable: bool = False
@@ -161,6 +162,13 @@ class OhmeApiClient:
 
                 return await resp.json() if method != "PUT" else True
 
+    def _charge_in_progress(self) -> bool:
+        """Is a charge in progress? Used to determine if schedule or session should be adjusted."""
+        return (
+            self.status is not ChargerStatus.UNPLUGGED
+            and self.status is not ChargerStatus.PENDING_APPROVAL
+        )
+
     # Simple getters
 
     def is_capable(self, capability) -> bool:
@@ -209,6 +217,22 @@ class OhmeApiClient:
             volts=charge_power.get("volt", None),
             ct_amps=self._advanced_settings.get("clampAmps", 0),
         )
+
+    @property
+    def target_soc(self) -> int:
+        """Target state of charge."""
+        if self._charge_in_progress():
+            return int(self._charge_session["appliedRule"]["targetPercent"])
+
+        return int(self._next_session.get("targetPercent", 0))
+
+    @property
+    def target_time(self) -> int:
+        """Target state of charge."""
+        if self._charge_in_progress():
+            return int(self._charge_session["appliedRule"]["targetTime"])
+        
+        return int(self._next_session.get("targetTime", 0))
 
     @property
     def slots(self) -> list[ChargeSlot]:
@@ -356,10 +380,8 @@ class OhmeApiClient:
         pre_condition=None,
         pre_condition_length=None,
     ) -> bool:
-        """Update the first listed schedule."""
-        await self.async_get_schedules()
-
-        rule = self.schedules[0]
+        """Update the schedule for the next charge."""
+        rule = self._next_session
 
         # Account for user having no rules
         if not rule:
@@ -380,13 +402,25 @@ class OhmeApiClient:
         await self._make_request("PUT", f"/v1/chargeRules/{rule['id']}", data=rule)
         return True
 
+    async def async_set_target(self, target_percent=None, target_time=None) -> bool:
+        """Set a target time/percentage."""
+        if self._charge_in_progress():
+           await self.async_apply_session_rule(
+                target_percent=target_percent, target_time=target_time
+            )
+        else:
+             await self.async_update_schedule(
+                target_percent=target_percent, target_time=target_time
+            )
+        return True
+
     async def async_set_configuration_value(self, values) -> bool:
         """Set a configuration value or values."""
         result = await self._make_request(
             "PUT", f"/v1/chargeDevices/{self.serial}/appSettings", data=values
         )
-        await asyncio.sleep(1) # The API is slow to update after this request
-        
+        await asyncio.sleep(1)  # The API is slow to update after this request
+
         return bool(result)
 
     # Pull methods
@@ -416,6 +450,9 @@ class OhmeApiClient:
         self.battery = resp.get("car", {}).get("batterySoc", {}).get("percent", 0)
         self.battery = self.battery or resp.get("batterySoc", {}).get("percent", 0)
 
+        resp = await self._make_request("GET", "/v1/chargeSessions/nextSessionInfo")
+        self._next_session = resp.get("rule", {})
+
     async def async_get_advanced_settings(self) -> None:
         """Get advanced settings (mainly for CT clamp reading)"""
         resp = await self._make_request(
@@ -429,12 +466,6 @@ class OhmeApiClient:
             isinstance(resp.get("clampAmps"), float) and resp.get("clampAmps") > 0
         ):
             self.ct_connected = True
-
-    async def async_get_schedules(self) -> None:
-        """Get charge schedules."""
-        schedules = await self._make_request("GET", "/v1/chargeRules")
-
-        self.schedules = schedules
 
     async def async_update_device_info(self) -> bool:
         """Update _device_info with our charger model."""
