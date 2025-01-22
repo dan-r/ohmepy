@@ -227,12 +227,14 @@ class OhmeApiClient:
         return int(self._next_session.get("targetPercent", 0))
 
     @property
-    def target_time(self) -> int:
+    def target_time(self) -> tuple[int, int]:
         """Target state of charge."""
         if self._charge_in_progress():
-            return int(self._charge_session["appliedRule"]["targetTime"])
+            target = int(self._charge_session["appliedRule"]["targetTime"])
         
-        return int(self._next_session.get("targetTime", 0))
+        target = int(self._next_session.get("targetTime", 0))
+
+        return (target // 3600, (target % 3600) // 60)
 
     @property
     def slots(self) -> list[ChargeSlot]:
