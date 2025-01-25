@@ -25,6 +25,14 @@ class ChargerStatus(Enum):
     PAUSED = "paused"
 
 
+class ChargerMode(Enum):
+    """Charger mode enum."""
+
+    SMART_CHARGE = "smart_charge"
+    MAX_CHARGE = "max_charge"
+    PAUSED = "paused"
+
+
 @dataclass
 class ChargerPower:
     """Dataclass for reporting power status of charger."""
@@ -197,6 +205,18 @@ class OhmeApiClient:
             return ChargerStatus.PLUGGED_IN
 
     @property
+    def mode(self) -> ChargerMode:
+        """Return status from enum."""
+        if self._charge_session["mode"] == "SMART_CHARGE":
+            return ChargerMode.SMART_CHARGE
+        elif self._charge_session["mode"] == "MAX_CHARGE":
+            return ChargerMode.MAX_CHARGE
+        elif self._charge_session["mode"] == "STOPPED":
+            return ChargerStatus.PAUSED
+
+        return None
+
+    @property
     def max_charge(self) -> bool:
         """Get if max charge is enabled."""
         return self._charge_session.get("mode") == "MAX_CHARGE"
@@ -221,7 +241,12 @@ class OhmeApiClient:
     @property
     def target_soc(self) -> int:
         """Target state of charge."""
-        if self._charge_in_progress():
+        if (
+            self.status is ChargerStatus.PAUSED
+            and self._charge_session.get("suspendedRule") is not None
+        ):
+            return self._charge_session.get("suspendedRule", {}).get("targetPercent", 0)
+        elif self._charge_in_progress():
             return int(self._charge_session["appliedRule"]["targetPercent"])
 
         return int(self._next_session.get("targetPercent", 0))
@@ -231,7 +256,7 @@ class OhmeApiClient:
         """Target state of charge."""
         if self._charge_in_progress():
             target = int(self._charge_session["appliedRule"]["targetTime"])
-        
+
         target = int(self._next_session.get("targetTime", 0))
 
         return (target // 3600, (target % 3600) // 60)
@@ -295,6 +320,18 @@ class OhmeApiClient:
             f"/v1/chargeSessions/{self.serial}/rule?maxCharge=" + str(state).lower(),
         )
         return bool(result)
+
+    async def async_set_mode(self, mode: ChargerMode | str) -> None:
+        """Set charger mode."""
+        if isinstance(mode, str):
+            mode = ChargerMode(mode)
+
+        if mode is ChargerMode.MAX_CHARGE:
+            await self.async_max_charge(True)
+        elif mode is ChargerMode.SMART_CHARGE:
+            await self.async_max_charge(False)
+        elif mode is ChargerMode.PAUSED:
+            await self.async_pause_charge()
 
     async def async_apply_session_rule(
         self,
@@ -407,11 +444,11 @@ class OhmeApiClient:
     async def async_set_target(self, target_percent=None, target_time=None) -> bool:
         """Set a target time/percentage."""
         if self._charge_in_progress():
-           await self.async_apply_session_rule(
+            await self.async_apply_session_rule(
                 target_percent=target_percent, target_time=target_time
             )
         else:
-             await self.async_update_schedule(
+            await self.async_update_schedule(
                 target_percent=target_percent, target_time=target_time
             )
         return True
@@ -429,8 +466,16 @@ class OhmeApiClient:
 
     async def async_get_charge_session(self) -> None:
         """Fetch charge sessions endpoint."""
-        resp = await self._make_request("GET", "/v1/chargeSessions")
-        resp = resp[0]
+        # Retry if state is CALCULATING or DELIVERING
+        for attempt in range(3):
+            resp = await self._make_request("GET", "/v1/chargeSessions")
+            resp = resp[0]
+
+            if resp.get("mode") != "CALCULATING" and resp.get("mode") != "DELIVERING":
+                break
+
+            if attempt < 2:  # Only sleep if there are more retries left
+                await asyncio.sleep(1)
 
         self._charge_session = resp
 
