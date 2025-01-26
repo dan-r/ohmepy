@@ -483,8 +483,12 @@ class OhmeApiClient:
         if resp["mode"] == "SMART_CHARGE" and "appliedRule" in resp:
             self._last_rule = resp["appliedRule"]
 
-        # Calculate energy
-        new_energy = (resp.get("chargeGraph", {}).get("now", {}) or {}).get("y", 0)
+        # Calculate energy. chargeGraph source seems more accurate but doesn't always exist
+        try:
+            new_energy = resp["chargeGraph"]["now"]["y"] or 0
+        except KeyError:
+            new_energy = resp["batterySoc"]["wh"] or 0
+
         if self.energy is None or new_energy <= 0:
             self.energy = new_energy
         elif (
