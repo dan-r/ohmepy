@@ -486,16 +486,16 @@ class OhmeApiClient:
         new_energy = 0
         
         if resp['batterySoc']:
-            new_energy = resp['batterySoc'].get('wh', 0)
+            new_energy = resp['batterySoc'].get('wh') or 0
 
-        if self.energy is None or new_energy <= 0:
-            self.energy = new_energy
+        if new_energy <= 0:
+            self.energy = 0
         elif (
             self.energy > 0 and new_energy > 0 and (new_energy / self.energy) < 0.1
         ):  # Allow a significant (90%+) drop, even if we dont hit exactly 0
             self.energy = new_energy
         else:
-            self.energy = max(0, self.energy or 0, new_energy)
+            self.energy = max(0, self.energy, new_energy)
 
         self.battery = resp.get("car", {}).get("batterySoc", {}).get("percent", 0)
         self.battery = self.battery or resp.get("batterySoc", {}).get("percent", 0)
