@@ -23,6 +23,7 @@ class ChargerStatus(Enum):
     CHARGING = "charging"
     PLUGGED_IN = "plugged_in"
     PAUSED = "paused"
+    FINISHED = "finished"
 
 
 class ChargerMode(Enum):
@@ -196,6 +197,8 @@ class OhmeApiClient:
             return ChargerStatus.UNPLUGGED
         elif self._charge_session["mode"] == "STOPPED":
             return ChargerStatus.PAUSED
+        elif self._charge_session["mode"] == "FINISHED_CHARGE":
+            return ChargerStatus.FINISHED
         elif (
             self._charge_session.get("power")
             and self._charge_session["power"].get("watt", 0) > 0
@@ -256,10 +259,23 @@ class OhmeApiClient:
         """Target state of charge."""
         if self._charge_in_progress():
             target = int(self._charge_session["appliedRule"]["targetTime"])
-
-        target = int(self._next_session.get("targetTime", 0))
+        else:
+            target = int(self._next_session.get("targetTime", 0))
 
         return (target // 3600, (target % 3600) // 60)
+
+
+    @property
+    def preconditioning(self) -> int:
+        """Preconditioning time."""
+        if self._charge_in_progress():
+            if self._last_rule.get("preconditioningEnabled"):
+                return int(self._last_rule.get("preconditionLengthMins", 0))
+        else:
+            if self._next_session.get("preconditioningEnabled"):
+                return int(self._next_session.get("preconditionLengthMins", 0))
+
+        return 0
 
     @property
     def slots(self) -> list[ChargeSlot]:
@@ -367,7 +383,7 @@ class OhmeApiClient:
                 else False
             )
 
-        if pre_condition_length is None:
+        if not pre_condition_length:
             pre_condition_length = (
                 self._last_rule["preconditionLengthMins"]
                 if (
@@ -435,21 +451,26 @@ class OhmeApiClient:
         # Update pre-conditioning if provided
         if pre_condition is not None:
             rule["preconditioningEnabled"] = pre_condition
-        if pre_condition_length is not None:
+        if pre_condition_length:
             rule["preconditionLengthMins"] = pre_condition_length
 
         await self._make_request("PUT", f"/v1/chargeRules/{rule['id']}", data=rule)
         return True
 
-    async def async_set_target(self, target_percent=None, target_time=None) -> bool:
+    async def async_set_target(self, target_percent=None, target_time=None, pre_condition_length=None) -> bool:
         """Set a target time/percentage."""
+        args = {"target_percent": target_percent, "target_time": target_time}
+        if pre_condition_length is not None:
+            args['pre_condition'] = bool(pre_condition_length)
+            args['pre_condition_length'] = int(pre_condition_length)
+
         if self._charge_in_progress():
             await self.async_apply_session_rule(
-                target_percent=target_percent, target_time=target_time
+                **args
             )
         else:
             await self.async_update_schedule(
-                target_percent=target_percent, target_time=target_time
+                **args
             )
         return True
 
@@ -497,8 +518,11 @@ class OhmeApiClient:
         else:
             self.energy = max(0, self.energy, new_energy)
 
-        self.battery = resp.get("car", {}).get("batterySoc", {}).get("percent", 0)
-        self.battery = self.battery or resp.get("batterySoc", {}).get("percent", 0)
+        self.battery = (
+            ((resp.get("car") or {}).get("batterySoc") or {}).get("percent")
+            or (resp.get("batterySoc") or {}).get("percent")
+            or 0
+        )
 
         resp = await self._make_request("GET", "/v1/chargeSessions/nextSessionInfo")
         self._next_session = resp.get("rule", {})
