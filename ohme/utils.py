@@ -33,7 +33,7 @@ def slot_list(data):
     if not session_slots:
         return []
 
-    wh_tally = data.get("batterySocBefore", {}).get("wh", 0)
+    wh_tally = data.get("batterySocBefore", {}).get("wh") or 0
 
     slots = []
 
