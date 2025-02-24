@@ -33,8 +33,6 @@ def slot_list(data):
     if not session_slots:
         return []
 
-    wh_tally = data.get("batterySocBefore", {}).get("wh") or 0
-
     slots = []
 
     for slot in session_slots:
@@ -48,10 +46,11 @@ def slot_list(data):
             .replace(tzinfo=ZoneInfo("UTC"), microsecond=0)
             .astimezone()
         )
-        energy = (slot["estimatedSoc"]["wh"] - wh_tally) / 1000
+
+        hours = (end_time - start_time).total_seconds() / 3600
+        energy = round((slot["watts"] * hours) / 1000, 2)
 
         slots.append(ChargeSlot(start_time, end_time, energy))
-        wh_tally = slot["estimatedSoc"]["wh"]
 
     # Merge adjacent slots
     merged_slots = []
