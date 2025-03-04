@@ -9,7 +9,7 @@ from typing import Any
 from dataclasses import dataclass
 import datetime
 import aiohttp
-from .utils import time_next_occurs, ChargeSlot, slot_list
+from .utils import time_next_occurs, ChargeSlot, slot_list, vehicle_to_name
 from .const import VERSION, GOOGLE_API_KEY
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,6 +60,7 @@ class OhmeApiClient:
         self._charge_session: dict[str, Any] = {}
         self._advanced_settings: dict[str, Any] = {}
         self._next_session: dict[str, Any] = {}
+        self._cars: list[Any] = []
 
         self.energy: float = 0.0
         self.battery: int = 0
@@ -306,6 +307,22 @@ class OhmeApiClient:
             default=None,
         )
 
+    @property
+    def vehicles(self) -> list[str]:
+        """Return a list of vehicle names."""
+        output = []
+        for vehicle in self._cars:
+            output.append(vehicle_to_name(vehicle))
+        return output
+    
+    @property
+    def current_vehicle(self) -> str:
+        """Returns the name of the currently selected vehicle."""
+        # The selected vehicle is the first one in this list
+        if len(self._cars) > 0:
+            return vehicle_to_name(self._cars[0])
+        return None
+
     # Push methods
 
     async def async_pause_charge(self) -> bool:
@@ -483,6 +500,17 @@ class OhmeApiClient:
 
         return bool(result)
 
+    async def async_set_vehicle(self, selected_name) -> bool:
+        """Set the vehicle to be charged."""
+        for vehicle in self._cars:
+            if vehicle_to_name(vehicle) == selected_name:
+                result = await self._make_request(
+                    "PUT", f"/v1/car/{vehicle['id']}/select"
+                )
+
+                return True
+        return False
+
     # Pull methods
 
     async def async_get_charge_session(self) -> None:
@@ -536,6 +564,7 @@ class OhmeApiClient:
     async def async_update_device_info(self) -> bool:
         """Update _device_info with our charger model."""
         resp = await self._make_request("GET", "/v1/users/me/account")
+        self._cars = resp.get("cars") or []
 
         device = resp["chargeDevices"][0]
 

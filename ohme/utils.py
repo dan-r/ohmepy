@@ -66,3 +66,21 @@ def slot_list(data):
             merged_slots.append(slot)
 
     return merged_slots
+
+def vehicle_to_name(vehicle):
+    """Translate vehicle object to human readable name."""
+    if vehicle.get("name") is not None:
+        return vehicle.get("name")
+
+    model = vehicle.get("model") or {}
+    brand = model.get("brand") or {}
+
+    brand_name = brand.get("name") or model.get("make") or "Unknown"
+    model_name = model.get("modelName") or "Unknown"
+    year_from = model.get("availableFromYear")
+    year_to = model.get("availableToYear")
+
+    if year_from is None or year_to is None:
+        return f"{brand_name} {model_name}"
+
+    return f"{brand_name} {model_name} ({year_from}-{year_to})"
