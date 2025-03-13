@@ -78,9 +78,9 @@ def vehicle_to_name(vehicle):
     brand_name = brand.get("name") or model.get("make") or "Unknown"
     model_name = model.get("modelName") or "Unknown"
     year_from = model.get("availableFromYear")
-    year_to = model.get("availableToYear")
+    year_to = model.get("availableToYear") or ""
 
-    if year_from is None or year_to is None:
+    if year_from is None:
         return f"{brand_name} {model_name}"
 
     return f"{brand_name} {model_name} ({year_from}-{year_to})"

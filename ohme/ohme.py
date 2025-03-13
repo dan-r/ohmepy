@@ -69,6 +69,7 @@ class OhmeApiClient:
         self._configuration: dict[str, bool | str] = {}
         self.ct_connected: bool = False
         self.cap_available: bool = True
+        self.cap_enabled: bool = False
         self.solar_capable: bool = False
 
         # Authentication
@@ -435,7 +436,7 @@ class OhmeApiClient:
 
     async def async_change_price_cap(self, enabled=None, cap=None) -> bool:
         """Change price cap settings."""
-        settings = await self._make_request("PUT", "/v1/users/me/settings")
+        settings = await self._make_request("GET", "/v1/users/me/settings")
         if enabled is not None:
             settings["chargeSettings"][0]["enabled"] = enabled
 
@@ -565,6 +566,11 @@ class OhmeApiClient:
         """Update _device_info with our charger model."""
         resp = await self._make_request("GET", "/v1/users/me/account")
         self._cars = resp.get("cars") or []
+
+        try:
+            self.cap_enabled = resp['userSettings']['chargeSettings'][0]['enabled']
+        except:
+            pass
 
         device = resp["chargeDevices"][0]
 
