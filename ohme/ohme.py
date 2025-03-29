@@ -5,7 +5,7 @@ import asyncio
 import json
 from time import time
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Self, Mapping
 from dataclasses import dataclass
 import datetime
 import aiohttp
@@ -47,7 +47,9 @@ class ChargerPower:
 class OhmeApiClient:
     """API client for Ohme EV chargers."""
 
-    def __init__(self, email: str, password: str) -> None:
+    def __init__(
+        self, email: str, password: str, session: Optional[aiohttp.ClientSession] = None
+    ) -> None:
         if email is None or password is None:
             raise AuthException("Credentials not provided")
 
@@ -81,15 +83,21 @@ class OhmeApiClient:
         self.serial = ""
 
         # Sessions
-        self._timeout = aiohttp.ClientTimeout(total=10)
+        self._session = session
+        self._close_session = False
+        self._timeout = 10
         self._last_rule: dict[str, Any] = {}
 
     # Auth methods
 
     async def async_login(self) -> bool:
         """Refresh the user auth token from the stored credentials."""
-        async with aiohttp.ClientSession(timeout=self._timeout) as session:
-            async with session.post(
+        if self._session is None:
+            self._session = aiohttp.ClientSession()
+            self._close_session = True
+
+        async with asyncio.timeout(self._timeout):
+            async with self._session.post(
                 f"https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword?key={GOOGLE_API_KEY}",
                 data={
                     "email": self.email,
@@ -116,8 +124,12 @@ class OhmeApiClient:
         if time() - self._token_birth < 2700:
             return True
 
-        async with aiohttp.ClientSession(timeout=self._timeout) as session:
-            async with session.post(
+        if self._session is None:
+            self._session = aiohttp.ClientSession()
+            self._close_session = True
+
+        async with asyncio.timeout(self._timeout):
+            async with self._session.post(
                 f"https://securetoken.googleapis.com/v1/token?key={GOOGLE_API_KEY}",
                 data={
                     "grantType": "refresh_token",
@@ -150,18 +162,20 @@ class OhmeApiClient:
         self,
         method: str,
         url: str,
-        data: Optional[dict[str, str]] = None,
+        data: Optional[Mapping[str, str | bool]] = None,
         skip_json: bool = False,
     ):
         """Make an HTTP request."""
         await self._async_refresh_session()
 
-        async with aiohttp.ClientSession(
-            base_url="https://api.ohme.io", timeout=self._timeout
-        ) as session:
-            async with session.request(
+        if self._session is None:
+            self._session = aiohttp.ClientSession()
+            self._close_session = True
+
+        async with asyncio.timeout(self._timeout):
+            async with self._session.request(
                 method=method,
-                url=url,
+                url=f"https://api.ohme.io{url}",
                 data=json.dumps(data) if data and method in {"PUT", "POST"} else data,
                 headers={
                     "Authorization": f"Firebase {self._token}",
@@ -509,7 +523,7 @@ class OhmeApiClient:
             )
         return True
 
-    async def async_set_configuration_value(self, values: dict[str, bool]) -> bool:
+    async def async_set_configuration_value(self, values: Mapping[str, bool]) -> bool:
         """Set a configuration value or values."""
         result = await self._make_request(
             "PUT", f"/v1/chargeDevices/{self.serial}/appSettings", data=values
@@ -609,6 +623,19 @@ class OhmeApiClient:
             self.solar_capable = True
 
         return True
+
+    async def close(self) -> None:
+        """Close open client session."""
+        if self._session and self._close_session:
+            await self._session.close()
+
+    async def __aenter__(self) -> Self:
+        """Async enter."""
+        return self
+
+    async def __aexit__(self, *_exc_info: object) -> None:
+        """Async exit."""
+        await self.close()
 
 
 # Exceptions

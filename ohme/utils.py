@@ -5,9 +5,9 @@ import datetime
 from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional, Union
 
-type JsonValueType = (
-    dict[str, JsonValueType] | list[JsonValueType] | str | int | float | bool | None
-)
+JsonValueType = Union[
+    Dict[str, "JsonValueType"], List["JsonValueType"], str, int, float, bool, None
+]
 
 
 def time_next_occurs(hour: int, minute: int) -> datetime.datetime:
@@ -86,8 +86,8 @@ def vehicle_to_name(vehicle: Dict[str, Any]) -> str:
     if vehicle.get("name") is not None:
         return vehicle["name"]
 
-    model: Dict[str, Any] = vehicle.get("model", {})
-    brand: Dict[str, Any] = model.get("brand", {})
+    model: Dict[str, Any] = vehicle.get("model") or {}
+    brand: Dict[str, Any] = model.get("brand") or {}
 
     brand_name = brand.get("name") or model.get("make") or "Unknown"
     model_name = model.get("modelName") or "Unknown"
