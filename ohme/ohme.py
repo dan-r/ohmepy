@@ -5,7 +5,7 @@ import asyncio
 import json
 from time import time
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 from dataclasses import dataclass
 import datetime
 import aiohttp
@@ -138,7 +138,7 @@ class OhmeApiClient:
 
     # Internal methods
 
-    async def _handle_api_error(self, url, resp):
+    async def _handle_api_error(self, url: str, resp: aiohttp.ClientResponse):
         """Raise an exception if API response failed."""
         if resp.status != 200:
             text = await resp.text()
@@ -146,7 +146,13 @@ class OhmeApiClient:
             _LOGGER.error(msg)
             raise ApiException(msg)
 
-    async def _make_request(self, method, url, data=None, skip_json=False):
+    async def _make_request(
+        self,
+        method: str,
+        url: str,
+        data: Optional[dict[str, str]] = None,
+        skip_json: bool = False,
+    ):
         """Make an HTTP request."""
         await self._async_refresh_session()
 
@@ -182,11 +188,11 @@ class OhmeApiClient:
 
     # Simple getters
 
-    def is_capable(self, capability) -> bool:
+    def is_capable(self, capability: str) -> bool:
         """Return whether or not this model has a given capability."""
         return bool(self._capabilities[capability])
 
-    def configuration_value(self, value) -> bool:
+    def configuration_value(self, value: str) -> bool:
         """Return a boolean configuration value."""
         return bool(self._configuration.get(value))
 
@@ -210,14 +216,14 @@ class OhmeApiClient:
             return ChargerStatus.PLUGGED_IN
 
     @property
-    def mode(self) -> ChargerMode:
+    def mode(self) -> Optional[ChargerMode]:
         """Return status from enum."""
         if self._charge_session["mode"] == "SMART_CHARGE":
             return ChargerMode.SMART_CHARGE
         elif self._charge_session["mode"] == "MAX_CHARGE":
             return ChargerMode.MAX_CHARGE
         elif self._charge_session["mode"] == "STOPPED":
-            return ChargerStatus.PAUSED
+            return ChargerMode.PAUSED
 
         return None
 
@@ -265,7 +271,6 @@ class OhmeApiClient:
             target = int(self._next_session.get("targetTime", 0))
 
         return (target // 3600, (target % 3600) // 60)
-
 
     @property
     def preconditioning(self) -> int:
@@ -315,9 +320,9 @@ class OhmeApiClient:
         for vehicle in self._cars:
             output.append(vehicle_to_name(vehicle))
         return output
-    
+
     @property
-    def current_vehicle(self) -> str:
+    def current_vehicle(self) -> Optional[str]:
         """Returns the name of the currently selected vehicle."""
         # The selected vehicle is the first one in this list
         if len(self._cars) > 0:
@@ -347,7 +352,7 @@ class OhmeApiClient:
         )
         return bool(result)
 
-    async def async_max_charge(self, state=True) -> bool:
+    async def async_max_charge(self, state: bool = True) -> bool:
         """Enable max charge"""
         result = await self._make_request(
             "PUT",
@@ -369,11 +374,11 @@ class OhmeApiClient:
 
     async def async_apply_session_rule(
         self,
-        max_price=None,
-        target_time=None,
-        target_percent=None,
-        pre_condition=None,
-        pre_condition_length=None,
+        max_price: Optional[float] = None,
+        target_time: Optional[tuple[int, int]] = None,
+        target_percent: Optional[int] = None,
+        pre_condition: Optional[bool] = None,
+        pre_condition_length: Optional[int] = None,
     ) -> bool:
         """Apply rule to ongoing charge/stop max charge."""
         # Check every property. If we've provided it, use that. If not, use the existing.
@@ -413,28 +418,30 @@ class OhmeApiClient:
 
         if target_time is None:
             # Default to 9am
-            target_time = (
+            target_time_cache = (
                 self._last_rule["targetTime"]
                 if "targetTime" in self._last_rule
                 else 32400
             )
-            target_time = (target_time // 3600, (target_time % 3600) // 60)
+            target_time = (target_time_cache // 3600, (target_time_cache % 3600) // 60)
 
         target_ts = int(
             time_next_occurs(target_time[0], target_time[1]).timestamp() * 1000
         )
 
         # Convert these to string form
-        max_price = "true" if max_price else "false"
-        pre_condition = "true" if pre_condition else "false"
+        max_price_str = "true" if max_price else "false"
+        pre_condition_str = "true" if pre_condition else "false"
 
         result = await self._make_request(
             "PUT",
-            f"/v1/chargeSessions/{self.serial}/rule?enableMaxPrice={max_price}&targetTs={target_ts}&enablePreconditioning={pre_condition}&toPercent={target_percent}&preconditionLengthMins={pre_condition_length}",
+            f"/v1/chargeSessions/{self.serial}/rule?enableMaxPrice={max_price_str}&targetTs={target_ts}&enablePreconditioning={pre_condition_str}&toPercent={target_percent}&preconditionLengthMins={pre_condition_length}",
         )
         return bool(result)
 
-    async def async_change_price_cap(self, enabled=None, cap=None) -> bool:
+    async def async_change_price_cap(
+        self, enabled: Optional[bool] = None, cap: Optional[float] = None
+    ) -> bool:
         """Change price cap settings."""
         settings = await self._make_request("GET", "/v1/users/me/settings")
         if enabled is not None:
@@ -448,10 +455,10 @@ class OhmeApiClient:
 
     async def async_update_schedule(
         self,
-        target_percent=None,
-        target_time=None,
-        pre_condition=None,
-        pre_condition_length=None,
+        target_percent: Optional[int] = None,
+        target_time: Optional[tuple[int, int]] = None,
+        pre_condition: Optional[bool] = None,
+        pre_condition_length: Optional[int] = None,
     ) -> bool:
         """Update the schedule for the next charge."""
         rule = self._next_session
@@ -475,24 +482,34 @@ class OhmeApiClient:
         await self._make_request("PUT", f"/v1/chargeRules/{rule['id']}", data=rule)
         return True
 
-    async def async_set_target(self, target_percent=None, target_time=None, pre_condition_length=None) -> bool:
+    async def async_set_target(
+        self,
+        target_percent: Optional[int] = None,
+        target_time: Optional[tuple[int, int]] = None,
+        pre_condition_length: Optional[int] = None,
+    ) -> bool:
         """Set a target time/percentage."""
-        args = {"target_percent": target_percent, "target_time": target_time}
+        pre_condition: Optional[bool] = None
         if pre_condition_length is not None:
-            args['pre_condition'] = bool(pre_condition_length)
-            args['pre_condition_length'] = int(pre_condition_length)
+            pre_condition = bool(pre_condition_length)
 
         if self._charge_in_progress():
             await self.async_apply_session_rule(
-                **args
+                target_time=target_time,
+                target_percent=target_percent,
+                pre_condition=pre_condition,
+                pre_condition_length=pre_condition_length,
             )
         else:
             await self.async_update_schedule(
-                **args
+                target_time=target_time,
+                target_percent=target_percent,
+                pre_condition=pre_condition,
+                pre_condition_length=pre_condition_length,
             )
         return True
 
-    async def async_set_configuration_value(self, values) -> bool:
+    async def async_set_configuration_value(self, values: dict[str, bool]) -> bool:
         """Set a configuration value or values."""
         result = await self._make_request(
             "PUT", f"/v1/chargeDevices/{self.serial}/appSettings", data=values
@@ -501,7 +518,7 @@ class OhmeApiClient:
 
         return bool(result)
 
-    async def async_set_vehicle(self, selected_name) -> bool:
+    async def async_set_vehicle(self, selected_name: str) -> bool:
         """Set the vehicle to be charged."""
         for vehicle in self._cars:
             if vehicle_to_name(vehicle) == selected_name:
@@ -534,8 +551,8 @@ class OhmeApiClient:
             self._last_rule = resp["appliedRule"]
 
         # Get energy reading
-        if self._charge_in_progress() and resp.get('batterySoc') is not None:
-            self.energy = max(0, self.energy, resp['batterySoc'].get('wh') or 0)
+        if self._charge_in_progress() and resp.get("batterySoc") is not None:
+            self.energy = max(0, self.energy, resp["batterySoc"].get("wh") or 0)
         else:
             self.energy = 0
 
@@ -568,7 +585,7 @@ class OhmeApiClient:
         self._cars = resp.get("cars") or []
 
         try:
-            self.cap_enabled = resp['userSettings']['chargeSettings'][0]['enabled']
+            self.cap_enabled = resp["userSettings"]["chargeSettings"][0]["enabled"]
         except:
             pass
 

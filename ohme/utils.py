@@ -3,9 +3,14 @@
 from dataclasses import dataclass
 import datetime
 from zoneinfo import ZoneInfo
+from typing import Any, Dict, List, Optional, Union
+
+type JsonValueType = (
+    dict[str, JsonValueType] | list[JsonValueType] | str | int | float | bool | None
+)
 
 
-def time_next_occurs(hour, minute):
+def time_next_occurs(hour: int, minute: int) -> datetime.datetime:
     """Find when this time next occurs."""
     current = datetime.datetime.now()
     target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -26,14 +31,22 @@ class ChargeSlot:
     def __str__(self):
         return f"{self.start.strftime('%H:%M')}-{self.end.strftime('%H:%M')}"
 
+    def to_dict(self) -> dict[str, JsonValueType]:
+        """Convert to a JSON-serializable dictionary."""
+        return {
+            "start": str(self.start.isoformat()),
+            "end": str(self.end.isoformat()),
+            "energy": float(self.energy),
+        }
 
-def slot_list(data):
+
+def slot_list(data: Dict[str, Any]) -> List[ChargeSlot]:
     """Get list of charge slots with energy delta summed for merged slots."""
     session_slots = data.get("allSessionSlots", [])
     if not session_slots:
         return []
 
-    slots = []
+    slots: List[ChargeSlot] = []
 
     for slot in session_slots:
         start_time = (
@@ -53,7 +66,7 @@ def slot_list(data):
         slots.append(ChargeSlot(start_time, end_time, energy))
 
     # Merge adjacent slots
-    merged_slots = []
+    merged_slots: List[ChargeSlot] = []
     for slot in slots:
         if merged_slots and merged_slots[-1].end == slot.start:
             # Merge slot by extending the end time and summing energy
@@ -67,13 +80,14 @@ def slot_list(data):
 
     return merged_slots
 
-def vehicle_to_name(vehicle):
+
+def vehicle_to_name(vehicle: Dict[str, Any]) -> str:
     """Translate vehicle object to human readable name."""
     if vehicle.get("name") is not None:
-        return vehicle.get("name")
+        return vehicle["name"]
 
-    model = vehicle.get("model") or {}
-    brand = model.get("brand") or {}
+    model: Dict[str, Any] = vehicle.get("model", {})
+    brand: Dict[str, Any] = model.get("brand", {})
 
     brand_name = brand.get("name") or model.get("make") or "Unknown"
     model_name = model.get("modelName") or "Unknown"
