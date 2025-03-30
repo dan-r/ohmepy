@@ -2,8 +2,7 @@
 
 from dataclasses import dataclass
 import datetime
-from zoneinfo import ZoneInfo
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Union
 
 JsonValueType = Union[
     Dict[str, "JsonValueType"], List["JsonValueType"], str, int, float, bool, None
@@ -51,12 +50,12 @@ def slot_list(data: Dict[str, Any]) -> List[ChargeSlot]:
     for slot in session_slots:
         start_time = (
             datetime.datetime.fromtimestamp(slot["startTimeMs"] / 1000)
-            .replace(tzinfo=ZoneInfo("UTC"), microsecond=0)
+            .replace(microsecond=0)
             .astimezone()
         )
         end_time = (
             datetime.datetime.fromtimestamp(slot["endTimeMs"] / 1000)
-            .replace(tzinfo=ZoneInfo("UTC"), microsecond=0)
+            .replace(microsecond=0)
             .astimezone()
         )
 
