@@ -581,11 +581,14 @@ class OhmeApiClient:
 
     async def async_get_advanced_settings(self) -> None:
         """Get advanced settings (mainly for CT clamp reading)"""
-        resp = await self._make_request(
-            "GET", f"/v1/chargeDevices/{self.serial}/advancedSettings"
-        )
-
-        self._advanced_settings = resp
+        try:
+            resp = await self._make_request(
+                "GET", f"/v1/chargeDevices/{self.serial}/advancedSettings"
+            )
+            self._advanced_settings = resp
+        except:
+            self._advanced_settings = {}
+            return
 
         # clampConnected is not reliable, so check clampAmps being > 0 as an alternative
         if resp["clampConnected"] or (
