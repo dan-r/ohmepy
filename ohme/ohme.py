@@ -41,7 +41,6 @@ class ChargerPower:
     watts: float
     amps: float
     volts: int | None
-    ct_amps: float
 
 
 class OhmeApiClient:
@@ -60,7 +59,6 @@ class OhmeApiClient:
         # Charger and its capabilities
         self.device_info: dict[str, Any] = {}
         self._charge_session: dict[str, Any] = {}
-        self._advanced_settings: dict[str, Any] = {}
         self._next_session: dict[str, Any] = {}
         self._cars: list[Any] = []
 
@@ -73,6 +71,7 @@ class OhmeApiClient:
         self.cap_available: bool = True
         self.cap_enabled: bool = False
         self.solar_capable: bool = False
+        self.available: bool = False
 
         # Authentication
         self._token_birth: float = 0.0
@@ -247,11 +246,6 @@ class OhmeApiClient:
         return self._charge_session.get("mode") == "MAX_CHARGE"
 
     @property
-    def available(self) -> bool:
-        """CT reading."""
-        return self._advanced_settings.get("online", False)
-
-    @property
     def power(self) -> ChargerPower:
         """Return all power readings."""
 
@@ -260,7 +254,6 @@ class OhmeApiClient:
             watts=charge_power.get("watt", 0),
             amps=charge_power.get("amp", 0),
             volts=charge_power.get("volt", None),
-            ct_amps=self._advanced_settings.get("clampAmps", 0),
         )
 
     @property
@@ -302,6 +295,11 @@ class OhmeApiClient:
     def slots(self) -> list[ChargeSlot]:
         """Slot list."""
         return slot_list(self._charge_session)
+
+    @property
+    def slots_full(self) -> list[ChargeSlot]:
+        """Slot list."""
+        return slot_list(self._charge_session, collapse=False)
 
     @property
     def next_slot_start(self) -> datetime.datetime | None:
@@ -560,6 +558,12 @@ class OhmeApiClient:
 
         self._charge_session = resp
 
+        # Get available status
+        if "chargerStatus" in resp and isinstance(resp["chargerStatus"], dict):
+            self.available = bool(resp["chargerStatus"].get("online"))
+        else:
+            self.available = False
+
         # Store last rule
         if resp["mode"] == "SMART_CHARGE" and "appliedRule" in resp:
             self._last_rule = resp["appliedRule"]
@@ -578,23 +582,6 @@ class OhmeApiClient:
 
         resp = await self._make_request("GET", "/v1/chargeSessions/nextSessionInfo")
         self._next_session = resp.get("rule", {})
-
-    async def async_get_advanced_settings(self) -> None:
-        """Get advanced settings (mainly for CT clamp reading)"""
-        try:
-            resp = await self._make_request(
-                "GET", f"/v1/chargeDevices/{self.serial}/advancedSettings"
-            )
-            self._advanced_settings = resp
-        except:
-            self._advanced_settings = {}
-            return
-
-        # clampConnected is not reliable, so check clampAmps being > 0 as an alternative
-        if resp["clampConnected"] or (
-            isinstance(resp.get("clampAmps"), float) and resp.get("clampAmps") > 0
-        ):
-            self.ct_connected = True
 
     async def async_update_device_info(self) -> bool:
         """Update _device_info with our charger model."""
