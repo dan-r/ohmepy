@@ -27,6 +27,12 @@ class ChargeSlot:
     end: datetime.datetime
     energy: float
 
+    @property
+    def power(self) -> str:
+        """Calculate power from energy."""
+        hours = (self.end - self.start).total_seconds() / 3600
+        return round(self.energy / hours, 2)
+
     def __str__(self):
         return f"{self.start.strftime('%H:%M')}-{self.end.strftime('%H:%M')}"
 
@@ -35,11 +41,12 @@ class ChargeSlot:
         return {
             "start": str(self.start.isoformat()),
             "end": str(self.end.isoformat()),
+            "power": float(self.power),
             "energy": float(self.energy),
         }
 
 
-def slot_list(data: Dict[str, Any]) -> List[ChargeSlot]:
+def slot_list(data: Dict[str, Any], collapse=True) -> List[ChargeSlot]:
     """Get list of charge slots with energy delta summed for merged slots."""
     session_slots = data.get("allSessionSlots", [])
     if not session_slots:
@@ -63,6 +70,9 @@ def slot_list(data: Dict[str, Any]) -> List[ChargeSlot]:
         energy = round((slot["watts"] * hours) / 1000, 2)
 
         slots.append(ChargeSlot(start_time, end_time, energy))
+
+    if not collapse:
+        return slots
 
     # Merge adjacent slots
     merged_slots: List[ChargeSlot] = []
