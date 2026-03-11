@@ -9,7 +9,7 @@ from typing import Any, Optional, Self, Mapping
 from dataclasses import dataclass
 import datetime
 import aiohttp
-from .utils import time_next_occurs, ChargeSlot, slot_list, vehicle_to_name
+from .utils import ChargeSlot, slot_list, vehicle_to_name
 from .const import VERSION, GOOGLE_API_KEY
 
 _LOGGER = logging.getLogger(__name__)
@@ -67,7 +67,6 @@ class OhmeApiClient:
 
         self._capabilities: dict[str, bool | str | list[str]] = {}
         self._configuration: dict[str, bool | str] = {}
-        self.ct_connected: bool = False
         self.cap_available: bool = True
         self.cap_enabled: bool = False
         self.solar_capable: bool = False
@@ -175,7 +174,8 @@ class OhmeApiClient:
             async with self._session.request(
                 method=method,
                 url=f"https://api.ohme.io{url}",
-                data=json.dumps(data) if data and method in {"PUT", "POST"} else data,
+                data=json.dumps(data) if data and method in {
+                    "PUT", "POST", "PATCH"} else data,
                 headers={
                     "Authorization": f"Firebase {self._token}",
                     "Content-Type": "application/json",
@@ -368,7 +368,8 @@ class OhmeApiClient:
         """Enable max charge"""
         result = await self._make_request(
             "PUT",
-            f"/v1/chargeSessions/{self.serial}/rule?maxCharge=" + str(state).lower(),
+            f"/v2/charge-devices/{self.serial}/charge-sessions/active/{self.serial}/max-charge?enabled=" + str(
+                state).lower(),
         )
         return bool(result)
 
@@ -383,73 +384,6 @@ class OhmeApiClient:
             await self.async_max_charge(False)
         elif mode is ChargerMode.PAUSED:
             await self.async_pause_charge()
-
-    async def async_apply_session_rule(
-        self,
-        max_price: Optional[float] = None,
-        target_time: Optional[tuple[int, int]] = None,
-        target_percent: Optional[int] = None,
-        pre_condition: Optional[bool] = None,
-        pre_condition_length: Optional[int] = None,
-    ) -> bool:
-        """Apply rule to ongoing charge/stop max charge."""
-        # Check every property. If we've provided it, use that. If not, use the existing.
-        if max_price is None:
-            if (
-                "settings" in self._last_rule
-                and self._last_rule["settings"] is not None
-                and len(self._last_rule["settings"]) > 1
-            ):
-                max_price = self._last_rule["settings"][0]["enabled"]
-            else:
-                max_price = False
-
-        if target_percent is None:
-            target_percent = (
-                self._last_rule["targetPercent"]
-                if "targetPercent" in self._last_rule
-                else 80
-            )
-
-        if pre_condition is None:
-            pre_condition = (
-                self._last_rule["preconditioningEnabled"]
-                if "preconditioningEnabled" in self._last_rule
-                else False
-            )
-
-        if not pre_condition_length:
-            pre_condition_length = (
-                self._last_rule["preconditionLengthMins"]
-                if (
-                    "preconditionLengthMins" in self._last_rule
-                    and self._last_rule["preconditionLengthMins"] is not None
-                )
-                else 30
-            )
-
-        if target_time is None:
-            # Default to 9am
-            target_time_cache = (
-                self._last_rule["targetTime"]
-                if "targetTime" in self._last_rule
-                else 32400
-            )
-            target_time = (target_time_cache // 3600, (target_time_cache % 3600) // 60)
-
-        target_ts = int(
-            time_next_occurs(target_time[0], target_time[1]).timestamp() * 1000
-        )
-
-        # Convert these to string form
-        max_price_str = "true" if max_price else "false"
-        pre_condition_str = "true" if pre_condition else "false"
-
-        result = await self._make_request(
-            "PUT",
-            f"/v1/chargeSessions/{self.serial}/rule?enableMaxPrice={max_price_str}&targetTs={target_ts}&enablePreconditioning={pre_condition_str}&toPercent={target_percent}&preconditionLengthMins={pre_condition_length}",
-        )
-        return bool(result)
 
     async def async_change_price_cap(
         self, enabled: Optional[bool] = None, cap: Optional[float] = None
@@ -483,7 +417,8 @@ class OhmeApiClient:
         if target_percent is not None:
             rule["targetPercent"] = target_percent
         if target_time is not None:
-            rule["targetTime"] = (target_time[0] * 3600) + (target_time[1] * 60)
+            rule["targetTime"] = (target_time[0] * 3600) + \
+                (target_time[1] * 60)
 
         # Update pre-conditioning if provided
         if pre_condition is not None:
@@ -501,24 +436,27 @@ class OhmeApiClient:
         pre_condition_length: Optional[int] = None,
     ) -> bool:
         """Set a target time/percentage."""
-        pre_condition: Optional[bool] = None
-        if pre_condition_length is not None:
-            pre_condition = bool(pre_condition_length)
+        data: dict = {}
 
-        if self._charge_in_progress():
-            await self.async_apply_session_rule(
-                target_time=target_time,
-                target_percent=target_percent,
-                pre_condition=pre_condition,
-                pre_condition_length=pre_condition_length,
-            )
-        else:
-            await self.async_update_schedule(
-                target_time=target_time,
-                target_percent=target_percent,
-                pre_condition=pre_condition,
-                pre_condition_length=pre_condition_length,
-            )
+        if target_percent is not None:
+            data["targetPercent"] = target_percent
+
+        if target_time is not None:
+            data["targetTime"] = (target_time[0] * 3600) + \
+                (target_time[1] * 60)
+
+        if pre_condition_length is not None:
+            data["preconditioning"] = {
+                "enabled": pre_condition_length > 0,
+                "lengthMins": pre_condition_length or 15,
+                "temperature": None,
+            }
+
+        await self._make_request(
+            "PATCH",
+            f"/v2/users/me/charge-rules/{self._last_rule.get('id')}?persist=true&recalculateSession=true",
+            data=data,
+        )
         return True
 
     async def async_set_configuration_value(self, values: Mapping[str, bool]) -> bool:
@@ -565,7 +503,7 @@ class OhmeApiClient:
             self.available = False
 
         # Store last rule
-        if resp["mode"] == "SMART_CHARGE" and "appliedRule" in resp:
+        if "appliedRule" in resp:
             self._last_rule = resp["appliedRule"]
 
         # Get energy reading
