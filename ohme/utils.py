@@ -8,17 +8,6 @@ JsonValueType = Union[
     Dict[str, "JsonValueType"], List["JsonValueType"], str, int, float, bool, None
 ]
 
-
-def time_next_occurs(hour: int, minute: int) -> datetime.datetime:
-    """Find when this time next occurs."""
-    current = datetime.datetime.now()
-    target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target <= datetime.datetime.now():
-        target = target + datetime.timedelta(days=1)
-
-    return target
-
-
 @dataclass
 class ChargeSlot:
     """Dataclass for reporting an individual charge slot."""
