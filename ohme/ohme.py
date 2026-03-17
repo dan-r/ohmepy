@@ -452,9 +452,13 @@ class OhmeApiClient:
                 "temperature": None,
             }
 
+        session_id = self._last_rule.get('id')
+        if session_id is None:
+            session_id = self._next_session.get('id')
+
         await self._make_request(
             "PATCH",
-            f"/v2/users/me/charge-rules/{self._last_rule.get('id')}?persist=true&recalculateSession=true",
+            f"/v2/users/me/charge-rules/{session_id}?persist=true&recalculateSession=true",
             data=data,
         )
         return True
