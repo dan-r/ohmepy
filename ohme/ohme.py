@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import asyncio
-import async_timeout
 import json
 import base64
 from time import time
@@ -80,6 +79,7 @@ class OhmeApiClient:
         self._token_birth: float = 0.0
         self._token: str | None = None
         self._refresh_token: str | None = None
+        self._user_id: str | None = None
 
         # User info
         self.serial = ""
@@ -98,7 +98,7 @@ class OhmeApiClient:
             self._session = aiohttp.ClientSession()
             self._close_session = True
 
-        async with async_timeout.timeout(self._timeout):
+        async with asyncio.timeout(self._timeout):
             async with self._session.post(
                 f"https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword?key={GOOGLE_API_KEY}",
                 data={
@@ -114,6 +114,7 @@ class OhmeApiClient:
                 self._token_birth = time()
                 self._token = resp_json["idToken"]
                 self._refresh_token = resp_json["refreshToken"]
+                self._user_id = self._extract_user_id(self._token)
                 return True
         raise AuthException("Incorrect credentials")
 
@@ -130,7 +131,7 @@ class OhmeApiClient:
             self._session = aiohttp.ClientSession()
             self._close_session = True
 
-        async with async_timeout.timeout(self._timeout):
+        async with asyncio.timeout(self._timeout):
             async with self._session.post(
                 f"https://securetoken.googleapis.com/v1/token?key={GOOGLE_API_KEY}",
                 data={
@@ -148,6 +149,7 @@ class OhmeApiClient:
                 self._token_birth = time()
                 self._token = resp_json["id_token"]
                 self._refresh_token = resp_json["refresh_token"]
+                self._user_id = self._extract_user_id(self._token)
                 return True
 
     # Internal methods
@@ -174,7 +176,7 @@ class OhmeApiClient:
             self._session = aiohttp.ClientSession()
             self._close_session = True
 
-        async with async_timeout.timeout(self._timeout):
+        async with asyncio.timeout(self._timeout):
             async with self._session.request(
                 method=method,
                 url=f"https://api.ohme.io{url}",
@@ -194,6 +196,18 @@ class OhmeApiClient:
                     return await resp.text()
 
                 return await resp.json() if method != "PUT" else True
+
+    @staticmethod
+    def _extract_user_id(token: str | None) -> str | None:
+        """Extract user_id from a JWT-style API token payload."""
+        if not token:
+            return None
+        try:
+            payload = token.split(".")[1]
+            payload += "=" * ((4 - len(payload) % 4) % 4)
+            return json.loads(base64.b64decode(payload)).get("user_id")
+        except Exception:
+            return None
 
     def _charge_in_progress(self) -> bool:
         """Is a charge in progress? Used to determine if schedule or session should be adjusted."""
@@ -607,18 +621,16 @@ class OhmeApiClient:
 
         if not self._token:
             await self._async_refresh_session()
-            
+
         if not self._token:
             raise AuthException("Not authenticated")
 
-        payload = self._token.split(".")[1]
-        payload += "=" * ((4 - len(payload) % 4) % 4)
-        user_id = json.loads(base64.b64decode(payload)).get("user_id")
-
-        if not user_id:
+        if not self._user_id:
+            self._user_id = self._extract_user_id(self._token)
+        if not self._user_id:
             raise ApiException("Could not determine user ID from API token")
 
-        url = f"/v1/chargeSessions/summary/users/{user_id}?endTs={end_ts}&granularity={granularity}&startTs={start_ts}"
+        url = f"/v1/chargeSessions/summary/users/{self._user_id}?endTs={end_ts}&granularity={granularity}&startTs={start_ts}"
         return await self._make_request("GET", url)
 
     async def async_update_device_info(self) -> bool:
