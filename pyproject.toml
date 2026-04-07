@@ -11,7 +11,7 @@ authors = [
 description = "A Python wrapper for the Ohme API, used by the Home Assistant integration."
 license = { text = "MIT" }
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
