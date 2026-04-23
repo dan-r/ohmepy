@@ -3,9 +3,10 @@
 import logging
 import asyncio
 import json
+import base64
 from time import time
 from enum import Enum
-from typing import Any, Optional, Self, Mapping
+from typing import Any, List, Mapping, Optional, Self, TypedDict
 from dataclasses import dataclass
 import datetime
 import aiohttp
@@ -32,6 +33,71 @@ class ChargerMode(Enum):
     SMART_CHARGE = "smart_charge"
     MAX_CHARGE = "max_charge"
     PAUSED = "paused"
+
+
+class SummaryGranularity(Enum):
+    """Granularity for charge summary data."""
+
+    DAY = "DAY"
+    HOUR = "HOUR"
+
+
+class Money(TypedDict):
+    currencyCode: str
+    amount: str
+
+
+class ChargeStat(TypedDict):
+    ownerUserId: str
+    deviceId: Optional[str]
+    energyChargedTotalWh: int
+    solarEnergyChargedWh: int
+    startTime: int
+    endTime: int
+    activeChargeMs: int
+    location: Optional[str]
+    locationType: Optional[str]
+
+    carbonStats: TypedDict(
+        "CarbonStats",
+        {
+            "carbonReleasedGreenScore": float,
+            "carbonReleasedPerKmGrams": int,
+            "carbonReleasedGrams": int,
+            "carbonReleasedRegularCableGrams": int,
+            "carbonSavedVsRegularCableGrams": int,
+            "carbonReleasedGasCarGrams": int,
+            "carbonSavedVsGasCarGrams": int,
+            "comparedGasCarLabel": Optional[str],
+        },
+        total=False,
+    )
+
+    costStats: TypedDict(
+        "CostStats",
+        {
+            "moneyCostTotal": Money,
+            "moneyCostStandardTariff": Money,
+            "moneySavedVsStandardTariff": Money,
+            "moneyCostPerKm": Money,
+            "averageKwhPrice": Money,
+        },
+    )
+
+    batteryStats: TypedDict(
+        "BatteryStats",
+        {
+            "batteryScore": float,
+            "batteryCycleUsePercent": int,
+            "rangeAddedKm": float,
+        },
+    )
+
+
+class ChargeSummary(TypedDict):
+    totalStats: ChargeStat
+    stats: List[ChargeStat]
+    granularity: SummaryGranularity
 
 
 @dataclass
@@ -76,6 +142,7 @@ class OhmeApiClient:
         self._token_birth: float = 0.0
         self._token: str | None = None
         self._refresh_token: str | None = None
+        self._user_id: str | None = None
 
         # User info
         self.serial = ""
@@ -110,6 +177,7 @@ class OhmeApiClient:
                 self._token_birth = time()
                 self._token = resp_json["idToken"]
                 self._refresh_token = resp_json["refreshToken"]
+                self._user_id = self._extract_user_id(self._token)
                 return True
         raise AuthException("Incorrect credentials")
 
@@ -144,6 +212,7 @@ class OhmeApiClient:
                 self._token_birth = time()
                 self._token = resp_json["id_token"]
                 self._refresh_token = resp_json["refresh_token"]
+                self._user_id = self._extract_user_id(self._token)
                 return True
 
     # Internal methods
@@ -174,8 +243,9 @@ class OhmeApiClient:
             async with self._session.request(
                 method=method,
                 url=f"https://api.ohme.io{url}",
-                data=json.dumps(data) if data and method in {
-                    "PUT", "POST", "PATCH"} else data,
+                data=json.dumps(data)
+                if data and method in {"PUT", "POST", "PATCH"}
+                else data,
                 headers={
                     "Authorization": f"Firebase {self._token}",
                     "Content-Type": "application/json",
@@ -192,6 +262,18 @@ class OhmeApiClient:
 
                 return await resp.json() if method != "PUT" else True
 
+    @staticmethod
+    def _extract_user_id(token: str | None) -> str | None:
+        """Extract user_id from a JWT token payload."""
+        if not token:
+            return None
+        try:
+            payload = token.split(".")[1]
+            payload += "=" * ((4 - len(payload) % 4) % 4)
+            return json.loads(base64.b64decode(payload)).get("user_id")
+        except Exception:
+            return None
+
     def _charge_in_progress(self) -> bool:
         """Is a charge in progress? Used to determine if schedule or session should be adjusted."""
         return (
@@ -203,7 +285,7 @@ class OhmeApiClient:
 
     def is_capable(self, capability: str) -> bool:
         """Return whether or not this model has a given capability."""
-        return bool(self._capabilities[capability])
+        return bool(self._capabilities.get(capability))
 
     def configuration_value(self, value: str) -> bool:
         """Return a boolean configuration value."""
@@ -368,8 +450,8 @@ class OhmeApiClient:
         """Enable max charge"""
         result = await self._make_request(
             "PUT",
-            f"/v2/charge-devices/{self.serial}/charge-sessions/active/{self.serial}/max-charge?enabled=" + str(
-                state).lower(),
+            f"/v2/charge-devices/{self.serial}/charge-sessions/active/{self.serial}/max-charge?enabled="
+            + str(state).lower(),
         )
         return bool(result)
 
@@ -417,8 +499,7 @@ class OhmeApiClient:
         if target_percent is not None:
             rule["targetPercent"] = target_percent
         if target_time is not None:
-            rule["targetTime"] = (target_time[0] * 3600) + \
-                (target_time[1] * 60)
+            rule["targetTime"] = (target_time[0] * 3600) + (target_time[1] * 60)
 
         # Update pre-conditioning if provided
         if pre_condition is not None:
@@ -442,8 +523,7 @@ class OhmeApiClient:
             data["targetPercent"] = target_percent
 
         if target_time is not None:
-            data["targetTime"] = (target_time[0] * 3600) + \
-                (target_time[1] * 60)
+            data["targetTime"] = (target_time[0] * 3600) + (target_time[1] * 60)
 
         if pre_condition_length is not None:
             data["preconditioning"] = {
@@ -452,9 +532,9 @@ class OhmeApiClient:
                 "temperature": None,
             }
 
-        session_id = self._last_rule.get('id')
+        session_id = self._last_rule.get("id")
         if session_id is None:
-            session_id = self._next_session.get('id')
+            session_id = self._next_session.get("id")
 
         await self._make_request(
             "PATCH",
@@ -524,6 +604,41 @@ class OhmeApiClient:
 
         resp = await self._make_request("GET", "/v1/chargeSessions/nextSessionInfo")
         self._next_session = resp.get("rule", {})
+
+    async def async_get_charge_summary(
+        self,
+        start_ts: Optional[int] = None,
+        end_ts: Optional[int] = None,
+        granularity: SummaryGranularity = SummaryGranularity.DAY,
+    ) -> ChargeSummary:
+        """
+        Fetch charge sessions summary.
+
+        :param start_ts: Unix timestamp in milliseconds for start of summary. Defaults to 24 hours ago.
+        :param end_ts: Unix timestamp in milliseconds for end of summary. Defaults to now.
+        :param granularity: Granularity of the summary data. Can be "DAY" or "HOUR".
+        """
+        if end_ts is None:
+            end_ts = int(time() * 1000)
+
+        if start_ts is None:
+            start_ts = end_ts - (24 * 60 * 60 * 1000)
+
+        if not self._token:
+            await self._async_refresh_session()
+
+        if not self._token:
+            raise AuthException("Not authenticated")
+
+        if not self._user_id:
+            self._user_id = self._extract_user_id(self._token)
+        if not self._user_id:
+            raise ApiException("Could not determine user ID from API token")
+
+        url = f"/v1/chargeSessions/summary/users/{self._user_id}?endTs={end_ts}&granularity={granularity.value}&startTs={start_ts}"
+        resp = await self._make_request("GET", url)
+        resp["granularity"] = SummaryGranularity(resp["granularity"])
+        return resp
 
     async def async_update_device_info(self) -> bool:
         """Update _device_info with our charger model."""
