@@ -7,7 +7,7 @@ import json
 import base64
 from time import time
 from enum import Enum
-from typing import Any, Optional, Mapping
+from typing import Any, List, Mapping, Optional, TypedDict
 from dataclasses import dataclass
 import datetime
 import aiohttp
@@ -35,6 +35,67 @@ class ChargerMode(Enum):
     MAX_CHARGE = "max_charge"
     PAUSED = "paused"
 
+
+class SummaryGranularity(Enum):
+    """Granularity for charge summary data."""
+
+    DAY = "DAY"
+    HOUR = "HOUR"
+
+class Money(TypedDict):
+    currencyCode: str
+    amount: str
+
+class ChargeStat(TypedDict):
+    ownerUserId: str
+    deviceId: Optional[str]
+    energyChargedTotalWh: int
+    solarEnergyChargedWh: int
+    startTime: int
+    endTime: int
+    activeChargeMs: int
+    location: Optional[str]
+    locationType: Optional[str]
+
+    carbonStats: TypedDict(
+        "CarbonStats",
+        {
+            "carbonReleasedGreenScore": float,
+            "carbonReleasedPerKmGrams": int,
+            "carbonReleasedGrams": int,
+            "carbonReleasedRegularCableGrams": int,
+            "carbonSavedVsRegularCableGrams": int,
+            "carbonReleasedGasCarGrams": int,
+            "carbonSavedVsGasCarGrams": int,
+            "comparedGasCarLabel": Optional[str],
+        },
+        total=False,
+    )
+
+    costStats: TypedDict(
+        "CostStats",
+        {
+            "moneyCostTotal": Money,
+            "moneyCostStandardTariff": Money,
+            "moneySavedVsStandardTariff": Money,
+            "moneyCostPerKm": Money,
+            "averageKwhPrice": Money,
+        },
+    )
+
+    batteryStats: TypedDict(
+        "BatteryStats",
+        {
+            "batteryScore": float,
+            "batteryCycleUsePercent": int,
+            "rangeAddedKm": float,
+        },
+    )
+
+class ChargeSummary(TypedDict):
+    totalStats: ChargeStat
+    stats: List[ChargeStat]
+    granularity: SummaryGranularity
 
 @dataclass
 class ChargerPower:
@@ -220,7 +281,7 @@ class OhmeApiClient:
 
     def is_capable(self, capability: str) -> bool:
         """Return whether or not this model has a given capability."""
-        return bool(self._capabilities[capability])
+        return bool(self._capabilities.get(capability))
 
     def configuration_value(self, value: str) -> bool:
         """Return a boolean configuration value."""
@@ -604,10 +665,10 @@ class OhmeApiClient:
         self,
         start_ts: Optional[int] = None,
         end_ts: Optional[int] = None,
-        granularity: str = "DAY",
-    ) -> dict[str, Any]:
+        granularity: SummaryGranularity = SummaryGranularity.DAY,
+    ) -> ChargeSummary:
         """
-        Fetch charge sessions summary endpoint.
+        Fetch charge sessions summary.
         
         :param start_ts: Unix timestamp in milliseconds for start of summary. Defaults to 24 hours ago.
         :param end_ts: Unix timestamp in milliseconds for end of summary. Defaults to now.
@@ -630,8 +691,10 @@ class OhmeApiClient:
         if not self._user_id:
             raise ApiException("Could not determine user ID from API token")
 
-        url = f"/v1/chargeSessions/summary/users/{self._user_id}?endTs={end_ts}&granularity={granularity}&startTs={start_ts}"
-        return await self._make_request("GET", url)
+        url = f"/v1/chargeSessions/summary/users/{self._user_id}?endTs={end_ts}&granularity={granularity.value}&startTs={start_ts}"
+        resp = await self._make_request("GET", url)
+        resp["granularity"] = SummaryGranularity(resp["granularity"])
+        return resp
 
     async def async_update_device_info(self) -> bool:
         """Update _device_info with our charger model."""
