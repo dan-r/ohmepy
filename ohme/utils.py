@@ -8,6 +8,7 @@ JsonValueType = Union[
     Dict[str, "JsonValueType"], List["JsonValueType"], str, int, float, bool, None
 ]
 
+
 @dataclass
 class ChargeSlot:
     """Dataclass for reporting an individual charge slot."""

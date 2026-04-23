@@ -1,5 +1,4 @@
 """Ohme API library."""
-from __future__ import annotations
 
 import logging
 import asyncio
@@ -7,7 +6,7 @@ import json
 import base64
 from time import time
 from enum import Enum
-from typing import Any, List, Mapping, Optional, TypedDict
+from typing import Any, List, Mapping, Optional, Self, TypedDict
 from dataclasses import dataclass
 import datetime
 import aiohttp
@@ -42,9 +41,11 @@ class SummaryGranularity(Enum):
     DAY = "DAY"
     HOUR = "HOUR"
 
+
 class Money(TypedDict):
     currencyCode: str
     amount: str
+
 
 class ChargeStat(TypedDict):
     ownerUserId: str
@@ -92,10 +93,12 @@ class ChargeStat(TypedDict):
         },
     )
 
+
 class ChargeSummary(TypedDict):
     totalStats: ChargeStat
     stats: List[ChargeStat]
     granularity: SummaryGranularity
+
 
 @dataclass
 class ChargerPower:
@@ -240,8 +243,9 @@ class OhmeApiClient:
             async with self._session.request(
                 method=method,
                 url=f"https://api.ohme.io{url}",
-                data=json.dumps(data) if data and method in {
-                    "PUT", "POST", "PATCH"} else data,
+                data=json.dumps(data)
+                if data and method in {"PUT", "POST", "PATCH"}
+                else data,
                 headers={
                     "Authorization": f"Firebase {self._token}",
                     "Content-Type": "application/json",
@@ -260,7 +264,7 @@ class OhmeApiClient:
 
     @staticmethod
     def _extract_user_id(token: str | None) -> str | None:
-        """Extract user_id from a JWT-style API token payload."""
+        """Extract user_id from a JWT token payload."""
         if not token:
             return None
         try:
@@ -446,8 +450,8 @@ class OhmeApiClient:
         """Enable max charge"""
         result = await self._make_request(
             "PUT",
-            f"/v2/charge-devices/{self.serial}/charge-sessions/active/{self.serial}/max-charge?enabled=" + str(
-                state).lower(),
+            f"/v2/charge-devices/{self.serial}/charge-sessions/active/{self.serial}/max-charge?enabled="
+            + str(state).lower(),
         )
         return bool(result)
 
@@ -495,8 +499,7 @@ class OhmeApiClient:
         if target_percent is not None:
             rule["targetPercent"] = target_percent
         if target_time is not None:
-            rule["targetTime"] = (target_time[0] * 3600) + \
-                (target_time[1] * 60)
+            rule["targetTime"] = (target_time[0] * 3600) + (target_time[1] * 60)
 
         # Update pre-conditioning if provided
         if pre_condition is not None:
@@ -520,8 +523,7 @@ class OhmeApiClient:
             data["targetPercent"] = target_percent
 
         if target_time is not None:
-            data["targetTime"] = (target_time[0] * 3600) + \
-                (target_time[1] * 60)
+            data["targetTime"] = (target_time[0] * 3600) + (target_time[1] * 60)
 
         if pre_condition_length is not None:
             data["preconditioning"] = {
@@ -530,9 +532,9 @@ class OhmeApiClient:
                 "temperature": None,
             }
 
-        session_id = self._last_rule.get('id')
+        session_id = self._last_rule.get("id")
         if session_id is None:
-            session_id = self._next_session.get('id')
+            session_id = self._next_session.get("id")
 
         await self._make_request(
             "PATCH",
@@ -611,14 +613,14 @@ class OhmeApiClient:
     ) -> ChargeSummary:
         """
         Fetch charge sessions summary.
-        
+
         :param start_ts: Unix timestamp in milliseconds for start of summary. Defaults to 24 hours ago.
         :param end_ts: Unix timestamp in milliseconds for end of summary. Defaults to now.
         :param granularity: Granularity of the summary data. Can be "DAY" or "HOUR".
         """
         if end_ts is None:
             end_ts = int(time() * 1000)
-            
+
         if start_ts is None:
             start_ts = end_ts - (24 * 60 * 60 * 1000)
 
@@ -674,7 +676,7 @@ class OhmeApiClient:
         if self._session and self._close_session:
             await self._session.close()
 
-    async def __aenter__(self) -> "OhmeApiClient":
+    async def __aenter__(self) -> Self:
         """Async enter."""
         return self
 
