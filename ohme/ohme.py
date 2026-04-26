@@ -10,7 +10,7 @@ from typing import Any, List, Mapping, Optional, Self, TypedDict
 from dataclasses import dataclass
 import datetime
 import aiohttp
-from .utils import ChargeSlot, slot_list, vehicle_to_name
+from .utils import ChargeSlot, parse_datetime, slot_list, vehicle_to_name
 from .const import VERSION, GOOGLE_API_KEY
 from .models import (
     ChargerStatus,
@@ -240,6 +240,16 @@ class OhmeApiClient:
     def max_charge(self) -> bool:
         """Get if max charge is enabled."""
         return self._charge_session.get("mode") == "MAX_CHARGE"
+
+    @property
+    def session_start(self) -> datetime.datetime | None:
+        """Return the active or completed session start time, if available."""
+        return parse_datetime(self._charge_session.get("startTime"))
+
+    @property
+    def session_finish(self) -> datetime.datetime | None:
+        """Return the completed session finish time, if available."""
+        return parse_datetime(self._charge_session.get("finishTime"))
 
     @property
     def power(self) -> ChargerPower:
@@ -546,7 +556,7 @@ class OhmeApiClient:
 
         :param start_ts: Unix timestamp in milliseconds for start of summary. Defaults to 24 hours ago.
         :param end_ts: Unix timestamp in milliseconds for end of summary. Defaults to now.
-        :param granularity: Granularity of the summary data. Can be "DAY" or "HOUR".
+        :param granularity: Granularity of the summary data. Can be DAY, HOUR, WEEK, or MONTH.
         """
         if end_ts is None:
             end_ts = int(time() * 1000)
