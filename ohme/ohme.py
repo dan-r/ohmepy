@@ -457,6 +457,22 @@ class OhmeApiClient:
         )
         return True
 
+    async def async_set_state_of_charge(
+        self,
+        state_of_charge: int,
+    ) -> bool:
+        """Set the state of charge of the current vehicle."""
+        current_vehicle_id = self._cars[0].get("id") if len(self._cars) > 0 else None
+        if current_vehicle_id is None:
+            raise ApiException("Current vehicle not found")
+
+        await self._make_request(
+            "PUT",
+            f"/v1/car/{current_vehicle_id}/state-of-charge",
+            data={"currentChargePercent": state_of_charge},
+        )
+        return True
+
     async def async_set_configuration_value(self, values: Mapping[str, bool]) -> bool:
         """Set a configuration value or values."""
         result = await self._make_request(
