@@ -12,101 +12,15 @@ import datetime
 import aiohttp
 from .utils import ChargeSlot, slot_list, vehicle_to_name
 from .const import VERSION, GOOGLE_API_KEY
+from .models import (
+    ChargerStatus,
+    ChargerMode,
+    SummaryGranularity,
+    ChargeSummary,
+    ChargerPower,
+)
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class ChargerStatus(Enum):
-    """Charger state enum."""
-
-    UNPLUGGED = "unplugged"
-    PENDING_APPROVAL = "pending_approval"
-    CHARGING = "charging"
-    PLUGGED_IN = "plugged_in"
-    PAUSED = "paused"
-    FINISHED = "finished"
-
-
-class ChargerMode(Enum):
-    """Charger mode enum."""
-
-    SMART_CHARGE = "smart_charge"
-    MAX_CHARGE = "max_charge"
-    PAUSED = "paused"
-
-
-class SummaryGranularity(Enum):
-    """Granularity for charge summary data."""
-
-    DAY = "DAY"
-    HOUR = "HOUR"
-
-
-class Money(TypedDict):
-    currencyCode: str
-    amount: str
-
-
-class ChargeStat(TypedDict):
-    ownerUserId: str
-    deviceId: Optional[str]
-    energyChargedTotalWh: int
-    solarEnergyChargedWh: int
-    startTime: int
-    endTime: int
-    activeChargeMs: int
-    location: Optional[str]
-    locationType: Optional[str]
-
-    carbonStats: TypedDict(
-        "CarbonStats",
-        {
-            "carbonReleasedGreenScore": float,
-            "carbonReleasedPerKmGrams": int,
-            "carbonReleasedGrams": int,
-            "carbonReleasedRegularCableGrams": int,
-            "carbonSavedVsRegularCableGrams": int,
-            "carbonReleasedGasCarGrams": int,
-            "carbonSavedVsGasCarGrams": int,
-            "comparedGasCarLabel": Optional[str],
-        },
-        total=False,
-    )
-
-    costStats: TypedDict(
-        "CostStats",
-        {
-            "moneyCostTotal": Money,
-            "moneyCostStandardTariff": Money,
-            "moneySavedVsStandardTariff": Money,
-            "moneyCostPerKm": Money,
-            "averageKwhPrice": Money,
-        },
-    )
-
-    batteryStats: TypedDict(
-        "BatteryStats",
-        {
-            "batteryScore": float,
-            "batteryCycleUsePercent": int,
-            "rangeAddedKm": float,
-        },
-    )
-
-
-class ChargeSummary(TypedDict):
-    totalStats: ChargeStat
-    stats: List[ChargeStat]
-    granularity: SummaryGranularity
-
-
-@dataclass
-class ChargerPower:
-    """Dataclass for reporting power status of charger."""
-
-    watts: float
-    amps: float
-    volts: int | None
 
 
 class OhmeApiClient:
@@ -540,6 +454,22 @@ class OhmeApiClient:
             "PATCH",
             f"/v2/users/me/charge-rules/{session_id}?persist=true&recalculateSession=true",
             data=data,
+        )
+        return True
+
+    async def async_set_state_of_charge(
+        self,
+        state_of_charge: int,
+    ) -> bool:
+        """Set the state of charge of the current vehicle."""
+        current_vehicle_id = self._cars[0].get("id") if len(self._cars) > 0 else None
+        if current_vehicle_id is None:
+            raise ApiException("Current vehicle not found")
+
+        await self._make_request(
+            "PUT",
+            f"/v1/car/{current_vehicle_id}/state-of-charge",
+            data={"currentChargePercent": state_of_charge},
         )
         return True
 
