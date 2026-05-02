@@ -31,6 +31,8 @@ class SummaryGranularity(Enum):
 
     DAY = "DAY"
     HOUR = "HOUR"
+    WEEK = "WEEK"
+    MONTH = "MONTH"
 
 
 class Money(TypedDict):
