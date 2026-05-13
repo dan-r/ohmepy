@@ -49,7 +49,6 @@ class OhmeApiClient:
         self._configuration: dict[str, bool | str] = {}
         self.cap_available: bool = True
         self.cap_enabled: bool = False
-        self.solar_capable: bool = False
         self.available: bool = False
 
         # Authentication
@@ -298,6 +297,11 @@ class OhmeApiClient:
         return slot_list(self._charge_session, collapse=False)
 
     @property
+    def solar_enabled(self) -> bool:
+        """Solar mode state."""
+        return self._configuration.get("solarMode") == "ZERO_EXPORT"
+
+    @property
     def next_slot_start(self) -> datetime.datetime | None:
         """Next slot start."""
         return min(
@@ -493,6 +497,12 @@ class OhmeApiClient:
                 return True
         return False
 
+    async def async_set_solar_mode(self, enabled: bool) -> bool:
+        """Set solar mode."""
+        return await self.async_set_configuration_value(
+            {"solarMode": "ZERO_EXPORT" if enabled else "IGNORE"}
+        )
+
     # Pull methods
 
     async def async_get_charge_session(self) -> None:
@@ -597,7 +607,7 @@ class OhmeApiClient:
 
         solar_modes = device["modelCapabilities"]["solarModes"]
         if isinstance(solar_modes, list) and len(solar_modes) == 1:
-            self.solar_capable = True
+            self._capabilities["solar"] = True
 
         return True
 
