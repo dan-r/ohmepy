@@ -359,11 +359,17 @@ class OhmeApiClient:
 
     async def async_approve_charge(self) -> bool:
         """Approve a charge"""
+        sessions = await self._make_request("GET", "/v1/chargeSessions")
+        if sessions and len(sessions) > 0 and "sessionId" in sessions[0]:
+            session_id = sessions[0]["sessionId"]
+        else:
+            session_id = self.serial
+
         result = await self._make_request(
-            "PUT", f"/v1/chargeSessions/{self.serial}/approve?approve=true"
+            "PUT", f"/v1/chargeSessions/{session_id}/approve?approve=true"
         )
         return bool(result)
-
+    
     async def async_max_charge(self, state: bool = True) -> bool:
         """Enable max charge"""
         result = await self._make_request(
