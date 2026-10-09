@@ -299,7 +299,7 @@ class OhmeApiClient:
     @property
     def solar_enabled(self) -> bool:
         """Solar mode state."""
-        return self._configuration.get("solarMode") == "ZERO_EXPORT"
+        return self._configuration.get("solarMode") in ("ZERO_EXPORT", "PURE_SOLAR")
 
     @property
     def next_slot_start(self) -> datetime.datetime | None:
@@ -610,8 +610,8 @@ class OhmeApiClient:
         if resp["tariff"] is not None and resp["tariff"]["dsrTariff"]:
             self.cap_available = False
 
-        solar_modes = device["modelCapabilities"]["solarModes"]
-        if isinstance(solar_modes, list) and len(solar_modes) == 1:
+        solar_modes = device["modelCapabilities"].get("solarModes")
+        if isinstance(solar_modes, list) and len(solar_modes) > 0:
             self._capabilities["solar"] = True
 
         return True
