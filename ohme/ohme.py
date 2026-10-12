@@ -59,6 +59,7 @@ class OhmeApiClient:
 
         # User info
         self.serial = ""
+        self.session_id: str = ""
 
         # Sessions
         self._session = session
@@ -345,40 +346,22 @@ class OhmeApiClient:
 
     async def async_pause_charge(self) -> bool:
         """Pause an ongoing charge"""
-        sessions = await self._make_request("GET", "/v1/chargeSessions")
-        if sessions and len(sessions) > 0 and "sessionId" in sessions[0]:
-            session_id = sessions[0]["sessionId"]
-        else:
-            session_id = self.serial
-
         result = await self._make_request(
-            "POST", f"/v1/chargeSessions/{session_id}/stop", skip_json=True
+            "POST", f"/v1/chargeSessions/{self.session_id}/stop", skip_json=True
         )
         return bool(result)
 
     async def async_resume_charge(self) -> bool:
         """Resume a paused charge"""
-        sessions = await self._make_request("GET", "/v1/chargeSessions")
-        if sessions and len(sessions) > 0 and "sessionId" in sessions[0]:
-            session_id = sessions[0]["sessionId"]
-        else:
-            session_id = self.serial
-
         result = await self._make_request(
-            "POST", f"/v1/chargeSessions/{session_id}/resume", skip_json=True
+            "POST", f"/v1/chargeSessions/{self.session_id}/resume", skip_json=True
         )
         return bool(result)
 
     async def async_approve_charge(self) -> bool:
         """Approve a charge"""
-        sessions = await self._make_request("GET", "/v1/chargeSessions")
-        if sessions and len(sessions) > 0 and "sessionId" in sessions[0]:
-            session_id = sessions[0]["sessionId"]
-        else:
-            session_id = self.serial
-
         result = await self._make_request(
-            "PUT", f"/v1/chargeSessions/{session_id}/approve?approve=true"
+            "PUT", f"/v1/chargeSessions/{self.session_id}/approve?approve=true"
         )
         return bool(result)
     
@@ -528,9 +511,17 @@ class OhmeApiClient:
         # Retry if state is CALCULATING or DELIVERING
         for attempt in range(3):
             resp = await self._make_request("GET", "/v1/chargeSessions")
-            resp = resp[0]
+            if resp and isinstance(resp, list) and len(resp) > 0:
+                session_data = resp[0]
+                if "sessionId" in session_data:
+                    self.session_id = session_data["sessionId"]
+                else:
+                    self.session_id = self.serial
+            else:
+                session_data = {}
+                self.session_id = self.serial
 
-            if resp.get("mode") != "CALCULATING" and resp.get("mode") != "DELIVERING":
+            if session_data.get("mode") != "CALCULATING" and session_data.get("mode") != "DELIVERING":
                 break
 
             if attempt < 2:  # Only sleep if there are more retries left
