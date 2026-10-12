@@ -80,6 +80,36 @@ def slot_list(data: Dict[str, Any], collapse=True) -> List[ChargeSlot]:
     return merged_slots
 
 
+def parse_datetime(value: Any) -> datetime.datetime | None:
+    """Parse Ohme datetime values into aware UTC datetimes."""
+    if value is None:
+        return None
+
+    if isinstance(value, datetime.datetime):
+        return value.astimezone(datetime.timezone.utc)
+
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.datetime.fromtimestamp(
+                value / 1000, tz=datetime.timezone.utc
+            )
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    if not isinstance(value, str):
+        return None
+
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+
+    return parsed.astimezone(datetime.timezone.utc)
+
+
 def vehicle_to_name(vehicle: Dict[str, Any]) -> str:
     """Translate vehicle object to human readable name."""
     if vehicle.get("name") is not None:
