@@ -345,15 +345,27 @@ class OhmeApiClient:
 
     async def async_pause_charge(self) -> bool:
         """Pause an ongoing charge"""
+        sessions = await self._make_request("GET", "/v1/chargeSessions")
+        if sessions and len(sessions) > 0 and "sessionId" in sessions[0]:
+            session_id = sessions[0]["sessionId"]
+        else:
+            session_id = self.serial
+
         result = await self._make_request(
-            "POST", f"/v1/chargeSessions/{self.serial}/stop", skip_json=True
+            "POST", f"/v1/chargeSessions/{session_id}/stop", skip_json=True
         )
         return bool(result)
 
     async def async_resume_charge(self) -> bool:
         """Resume a paused charge"""
+        sessions = await self._make_request("GET", "/v1/chargeSessions")
+        if sessions and len(sessions) > 0 and "sessionId" in sessions[0]:
+            session_id = sessions[0]["sessionId"]
+        else:
+            session_id = self.serial
+
         result = await self._make_request(
-            "POST", f"/v1/chargeSessions/{self.serial}/resume", skip_json=True
+            "POST", f"/v1/chargeSessions/{session_id}/resume", skip_json=True
         )
         return bool(result)
 
