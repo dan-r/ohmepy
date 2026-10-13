@@ -511,23 +511,21 @@ class OhmeApiClient:
         # Retry if state is CALCULATING or DELIVERING
         for attempt in range(3):
             resp = await self._make_request("GET", "/v1/chargeSessions")
-            if resp and isinstance(resp, list) and len(resp) > 0:
-                session_data = resp[0]
-                if "sessionId" in session_data:
-                    self.session_id = session_data["sessionId"]
-                else:
-                    self.session_id = self.serial
-            else:
-                session_data = {}
-                self.session_id = self.serial
+            resp = resp[0]
 
-            if session_data.get("mode") != "CALCULATING" and session_data.get("mode") != "DELIVERING":
+            if resp.get("mode") != "CALCULATING" and resp.get("mode") != "DELIVERING":
                 break
 
             if attempt < 2:  # Only sleep if there are more retries left
                 await asyncio.sleep(1)
 
         self._charge_session = resp
+
+        # Get session ID
+        if "sessionId" in resp:
+            self.session_id = resp["sessionId"]
+        else:
+            self.session_id = self.serial
 
         # Get available status
         if "chargerStatus" in resp and isinstance(resp["chargerStatus"], dict):
