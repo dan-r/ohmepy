@@ -300,7 +300,7 @@ class OhmeApiClient:
     @property
     def solar_enabled(self) -> bool:
         """Solar mode state."""
-        return self._configuration.get("solarMode") == "ZERO_EXPORT"
+        return self._configuration.get("solarMode") in ("ZERO_EXPORT", "PURE_SOLAR")
 
     @property
     def next_slot_start(self) -> datetime.datetime | None:
@@ -545,13 +545,8 @@ class OhmeApiClient:
         else:
             self.energy = 0
 
-        # Prefer the selected vehicle's SoC (self._cars[0], populated from
-        # /v1/users/me/account). Fall back to the previous behaviour when the car 
-        # list is unavailable.
-        selected_car = self._cars[0] if self._cars else {}
         self.battery = (
-            (selected_car.get("batterySoc") or {}).get("percent")
-            or ((resp.get("car") or {}).get("batterySoc") or {}).get("percent")
+            ((resp.get("car") or {}).get("batterySoc") or {}).get("percent")
             or (resp.get("batterySoc") or {}).get("percent")
             or 0
         )
@@ -619,8 +614,8 @@ class OhmeApiClient:
         if resp["tariff"] is not None and resp["tariff"]["dsrTariff"]:
             self.cap_available = False
 
-        solar_modes = device["modelCapabilities"]["solarModes"]
-        if isinstance(solar_modes, list) and len(solar_modes) == 1:
+        solar_modes = device["modelCapabilities"].get("solarModes")
+        if isinstance(solar_modes, list) and len(solar_modes) > 0:
             self._capabilities["solar"] = True
 
         return True
