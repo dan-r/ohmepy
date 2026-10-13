@@ -59,6 +59,7 @@ class OhmeApiClient:
 
         # User info
         self.serial = ""
+        self.session_id: str = ""
 
         # Sessions
         self._session = session
@@ -346,24 +347,24 @@ class OhmeApiClient:
     async def async_pause_charge(self) -> bool:
         """Pause an ongoing charge"""
         result = await self._make_request(
-            "POST", f"/v1/chargeSessions/{self.serial}/stop", skip_json=True
+            "POST", f"/v1/chargeSessions/{self.session_id}/stop", skip_json=True
         )
         return bool(result)
 
     async def async_resume_charge(self) -> bool:
         """Resume a paused charge"""
         result = await self._make_request(
-            "POST", f"/v1/chargeSessions/{self.serial}/resume", skip_json=True
+            "POST", f"/v1/chargeSessions/{self.session_id}/resume", skip_json=True
         )
         return bool(result)
 
     async def async_approve_charge(self) -> bool:
         """Approve a charge"""
         result = await self._make_request(
-            "PUT", f"/v1/chargeSessions/{self.serial}/approve?approve=true"
+            "PUT", f"/v1/chargeSessions/{self.session_id}/approve?approve=true"
         )
         return bool(result)
-
+    
     async def async_max_charge(self, state: bool = True) -> bool:
         """Enable max charge"""
         result = await self._make_request(
@@ -519,6 +520,12 @@ class OhmeApiClient:
                 await asyncio.sleep(1)
 
         self._charge_session = resp
+
+        # Get session ID
+        if "sessionId" in resp:
+            self.session_id = resp["sessionId"]
+        else:
+            self.session_id = self.serial
 
         # Get available status
         if "chargerStatus" in resp and isinstance(resp["chargerStatus"], dict):
