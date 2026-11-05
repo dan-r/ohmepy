@@ -18,6 +18,7 @@ from .models import (
     SummaryGranularity,
     ChargeSummary,
     ChargerPower,
+    BatteryReading,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -176,6 +177,20 @@ class OhmeApiClient:
                 return await resp.json() if method != "PUT" else True
 
     @staticmethod
+    def _battery_reading(soc: Optional[Mapping[str, Any]]) -> Optional[BatteryReading]:
+        """Parse a batterySoc object."""
+        if not soc or soc.get("percent") is None:
+            return None
+        timestamp = soc.get("timestamp")
+        return BatteryReading(
+            percent=soc["percent"],
+            timestamp=datetime.datetime.fromtimestamp(timestamp / 1000, datetime.UTC)
+            if timestamp
+            else None,
+            source=soc.get("source"),
+        )
+
+    @staticmethod
     def _extract_user_id(token: str | None) -> str | None:
         """Extract user_id from a JWT token payload."""
         if not token:
@@ -295,6 +310,21 @@ class OhmeApiClient:
     def slots_full(self) -> list[ChargeSlot]:
         """Slot list."""
         return slot_list(self._charge_session, collapse=False)
+
+    @property
+    def battery_reading(self) -> Optional[BatteryReading]:
+        """Last state of charge read from the vehicle API."""
+        return self._battery_reading(
+            (self._charge_session.get("car") or {}).get("batterySoc")
+        )
+
+    @property
+    def battery_estimate(self) -> Optional[BatteryReading]:
+        """Ohme's estimate of the state of charge during a charge."""
+        reading = self._battery_reading(self._charge_session.get("batterySoc"))
+        if reading is None or reading.source != "EXTRAPOLATION":
+            return None
+        return reading
 
     @property
     def solar_enabled(self) -> bool:
@@ -579,6 +609,22 @@ class OhmeApiClient:
         resp = await self._make_request("GET", url)
         resp["granularity"] = SummaryGranularity(resp["granularity"])
         return resp
+
+    async def async_update_vehicle_battery(self) -> Optional[BatteryReading]:
+        """Have Ohme fetch the state of charge from the vehicle API."""
+        current_vehicle_id = self._cars[0].get("id") if len(self._cars) > 0 else None
+        if current_vehicle_id is None:
+            raise ApiException("Current vehicle not found")
+
+        resp = await self._make_request(
+            "GET",
+            f"/v1/cars/{current_vehicle_id}/api/status?statusRetrievalErrors=true",
+        )
+
+        battery = self._battery_reading(resp.get("soc"))
+        if battery is not None:
+            self.battery = battery.percent
+        return battery
 
     async def async_update_device_info(self) -> bool:
         """Update _device_info with our charger model."""
