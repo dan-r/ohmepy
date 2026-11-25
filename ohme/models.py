@@ -1,5 +1,6 @@
 """Data models for Ohme API."""
 
+import datetime
 from enum import Enum
 
 from typing import TypedDict, Optional, List
@@ -82,6 +83,15 @@ class ChargeSummary(TypedDict):
     totalStats: ChargeStat
     stats: List[ChargeStat]
     granularity: SummaryGranularity
+
+
+@dataclass
+class BatteryReading:
+    """Vehicle state of charge, source is API or EXTRAPOLATION."""
+
+    percent: float
+    timestamp: Optional[datetime.datetime]
+    source: Optional[str]
 
 
 @dataclass
