@@ -347,24 +347,24 @@ class OhmeApiClient:
     async def async_pause_charge(self) -> bool:
         """Pause an ongoing charge"""
         result = await self._make_request(
-            "POST", f"/v1/chargeSessions/{self.session_id}/stop", skip_json=True
+            "POST", f"/v1/chargeSessions/{self.session_id or self.serial}/stop", skip_json=True
         )
         return bool(result)
 
     async def async_resume_charge(self) -> bool:
         """Resume a paused charge"""
         result = await self._make_request(
-            "POST", f"/v1/chargeSessions/{self.session_id}/resume", skip_json=True
+            "POST", f"/v1/chargeSessions/{self.session_id or self.serial}/resume", skip_json=True
         )
         return bool(result)
 
     async def async_approve_charge(self) -> bool:
         """Approve a charge"""
         result = await self._make_request(
-            "PUT", f"/v1/chargeSessions/{self.session_id}/approve?approve=true"
+            "PUT", f"/v1/chargeSessions/{self.session_id or self.serial}/approve?approve=true"
         )
         return bool(result)
-    
+
     async def async_max_charge(self, state: bool = True) -> bool:
         """Enable max charge"""
         result = await self._make_request(
